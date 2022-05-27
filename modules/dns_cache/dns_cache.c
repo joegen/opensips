@@ -53,10 +53,12 @@ static cachedb_con *cdbc = 0;
 
 static int blacklist_timeout=3600; /* seconds */
 static str cachedb_url = {0,0};
+static int cache_srv_record = 1;
 
 static param_export_t params[]={
 	{ "cachedb_url",                 STR_PARAM, &cachedb_url.s},
 	{ "blacklist_timeout",           INT_PARAM, &blacklist_timeout},
+	{ "cache_srv_record", INT_PARAM, &cache_srv_record},
 	{0,0,0}
 };
 
@@ -842,6 +844,10 @@ int put_dnscache_value(char *name,int r_type,void *record,int rdata_len,
 		return 1;
 	}
 
+	if (r_type == T_SRV && !cache_srv_record) {
+			return 1;
+	}
+
 	/* generate key */
 	key.s=create_keyname_for_record(name,r_type,rdata_len,&key.len);
 	if (key.s == NULL) {
@@ -865,7 +871,7 @@ int put_dnscache_value(char *name,int r_type,void *record,int rdata_len,
 				LM_ERR("failed to serialize he rdata\n");
 				return -1;
 			}
-		} else {
+		} else {	
 			value.s = serialize_dns_rdata((struct rdata *)record,
 		rdata_len,&value.len,CACHEDB_CAPABILITY(&cdbf,CACHEDB_CAP_BINARY_VALUE)?0:1);
 			if (value.s == NULL) {
