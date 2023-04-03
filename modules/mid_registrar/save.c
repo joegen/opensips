@@ -1181,7 +1181,7 @@ struct ucontact_info *mid_reg_pack_ci(struct sip_msg *req, struct sip_msg *rpl,
 		return NULL;
 	}
 
-	ci.sock = req->rcv.bind_address;
+	/* ci.sock = req->rcv.bind_address; */
 	ci.user_agent = &mri->user_agent;
 	ci.last_modified = get_act_time();
 	ci.flags = mri->ul_flags;
