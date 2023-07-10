@@ -367,6 +367,10 @@ static int overwrite_req_contacts(struct sip_msg *req,
 			  (ctid_insertion == MR_APPEND_PARAM ?
 					ctid_str.len + 2 + ctid_param.len : 0);
 
+		if (send_sock->proto == PROTO_TCP) {
+			len += 14 /*;transport=tcp*/;
+		}
+
 		lump_buf = pkg_malloc(len);
 		if (!lump_buf) {
 			LM_ERR("oom\n");
