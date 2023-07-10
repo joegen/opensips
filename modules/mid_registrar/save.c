@@ -380,21 +380,41 @@ static int overwrite_req_contacts(struct sip_msg *req,
 		       adv_port->len, adv_port->s, c->uri.len, c->uri.s,
 			   ctid_str.len, ctid_str.s, ctid_param.len, ctid_param.s);
 
-		if (ctid_insertion == MR_APPEND_PARAM) {
-			LM_DBG("param insertion\n");
-			len1 = snprintf(lump_buf, len,
-					"<sip:%.*s@%.*s:%.*s;%.*s=%llu%.*s>;expires=%d",
-			         new_username.len, new_username.s,
-			         adv_host->len, adv_host->s, adv_port->len, adv_port->s,
-			         ctid_param.len, ctid_param.s, (unsigned long long)ctid,
-			         extra_ct_params.len, extra_ct_params.s, expires);
+		/* Make transport parameter explicit if TCP is being used */
+		if (send_sock->proto == PROTO_TCP) {
+			if (ctid_insertion == MR_APPEND_PARAM) {
+				LM_DBG("param insertion\n");
+				len1 = snprintf(lump_buf, len,
+						"<sip:%.*s@%.*s:%.*s;%.*s=%llu%.*s;transport=tcp>;expires=%d",
+								new_username.len, new_username.s,
+								adv_host->len, adv_host->s, adv_port->len, adv_port->s,
+								ctid_param.len, ctid_param.s, (unsigned long long)ctid,
+								extra_ct_params.len, extra_ct_params.s, expires);
+			} else {
+				LM_DBG("username insertion\n");
+				len1 = snprintf(lump_buf, len,
+												"<sip:%.*s@%.*s:%.*s%.*s;transport=tcp>;expires=%d",
+									new_username.len, new_username.s,
+									adv_host->len, adv_host->s, adv_port->len, adv_port->s,
+									extra_ct_params.len, extra_ct_params.s, expires);
+			}
 		} else {
-			LM_DBG("username insertion\n");
-			len1 = snprintf(lump_buf, len,
-			                "<sip:%.*s@%.*s:%.*s%.*s>;expires=%d",
-			           new_username.len, new_username.s,
-			           adv_host->len, adv_host->s, adv_port->len, adv_port->s,
-			           extra_ct_params.len, extra_ct_params.s, expires);
+			if (ctid_insertion == MR_APPEND_PARAM) {
+				LM_DBG("param insertion\n");
+				len1 = snprintf(lump_buf, len,
+						"<sip:%.*s@%.*s:%.*s;%.*s=%llu%.*s>;expires=%d",
+								new_username.len, new_username.s,
+								adv_host->len, adv_host->s, adv_port->len, adv_port->s,
+								ctid_param.len, ctid_param.s, (unsigned long long)ctid,
+								extra_ct_params.len, extra_ct_params.s, expires);
+			} else {
+				LM_DBG("username insertion\n");
+				len1 = snprintf(lump_buf, len,
+												"<sip:%.*s@%.*s:%.*s%.*s>;expires=%d",
+									new_username.len, new_username.s,
+									adv_host->len, adv_host->s, adv_port->len, adv_port->s,
+									extra_ct_params.len, extra_ct_params.s, expires);
+			}
 		}
 
 		LM_DBG("final buffer: %.*s\n", len1, lump_buf);
