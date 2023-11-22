@@ -871,6 +871,7 @@ static /*inline*/ char* parse_via_param(char* p, char* end,
 						state=F_VIA;
 						goto endofvalue;
 					case P_STRING:
+						break; /* eat the comma */
 					case F_LF:
 					case F_CR:
 					case F_CRLF:
@@ -1947,6 +1948,8 @@ parse_again:
 						state=P_COMMENT;
 						break;
 					case P_COMMENT: /*everything is allowed in a comment*/
+						break;
+					case P_STRING: /*commas are allowed within a string*/
 						break;
 					default:
 						LM_ERR("on <%c> state %d\n",*tmp, state);
