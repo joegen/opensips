@@ -249,7 +249,7 @@ static int pv_get_rr_params(struct sip_msg *msg, pv_param_t *param,
 static int w_record_route(struct sip_msg *msg, str *key)
 {
 	if (ctx_rrdone_get()==1) {
-		LM_ERR("Double attempt to record-route\n");
+		//LM_ERR("Double attempt to record-route\n");
 		return -1;
 	}
 
@@ -264,7 +264,7 @@ static int w_record_route(struct sip_msg *msg, str *key)
 static int w_record_route_preset(struct sip_msg *msg, str *key, str *key2)
 {
 	if (ctx_rrdone_get()==1) {
-		LM_ERR("Double attempt to record-route\n");
+		//LM_ERR("Double attempt to record-route\n");
 		return -1;
 	}
 	if (key2 && !enable_double_rr) {
