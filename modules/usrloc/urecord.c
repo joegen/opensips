@@ -1111,6 +1111,49 @@ uint64_t next_contact_id(urecord_t* _r)
 	return contact_id;
 }
 
+
+/*
+ * Compute a contact_id for a not-yet-registered binding that stays stable
+ * across all REGISTER attempts of a single registration session (identified
+ * by Call-ID + Contact URI).  Unlike next_contact_id(), which advances a
+ * per-record counter on every call, this derives the 14-bit contact label
+ * deterministically from the session identity, so a REGISTER and its
+ * 401/407-authenticated retry yield the same ";ctid=" value.
+ *
+ * On the (very unlikely) event that the derived label is already taken by a
+ * *different* contact of the same AoR, we linearly probe for the next free
+ * label - still deterministically, so concurrent attempts of the same
+ * session keep agreeing.  Must be called with the AoR slot locked.
+ */
+uint64_t stable_contact_id(urecord_t* _r, const str* _callid,
+                           const str* _ct_uri)
+{
+	uint64_t contact_id;
+	unsigned short clabel;
+	ucontact_t *c;
+	int i;
+
+	/* derive a stable 14-bit contact label from the session identity */
+	clabel = (unsigned short)core_hash(_callid, _ct_uri, CLABEL_MASK + 1);
+
+	for (i = 0; i <= CLABEL_MASK; i++) {
+		contact_id = pack_indexes((unsigned short)_r->aorhash,
+		                          _r->label, clabel);
+
+		for (c = _r->contacts; c; c = c->next)
+			if (c->contact_id == contact_id)
+				break;
+
+		if (!c)
+			return contact_id; /* free label -> stable across retries */
+
+		clabel = CLABEL_INC_AND_TEST(clabel);
+	}
+
+	/* every label under this AoR is taken (not expected in practice) */
+	return next_contact_id(_r);
+}
+
 int persist_urecord_kv_store(urecord_t* _r)
 {
 	ucontact_t *c;

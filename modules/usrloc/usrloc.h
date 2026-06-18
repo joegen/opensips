@@ -444,6 +444,22 @@ typedef struct usrloc_api {
 	 */
 	int (*register_ulcb) (ul_cb_type types,
 	                      void (*cb) (void *binding, ul_cb_type type, ul_cb_extra *extra));
+
+	/**
+	 * Generate a contact ID for a record that stays stable across the
+	 * REGISTER attempts of a single registration session, identified by
+	 * its Call-ID and Contact URI (e.g. an initial REGISTER and its
+	 * 401/407-authenticated retry).  Unlike @next_contact_id, repeated
+	 * calls with the same (record, Call-ID, Contact URI) return the same ID.
+	 *
+	 * @r: the usrloc record
+	 * @callid: the REGISTER Call-ID
+	 * @ct_uri: the original (incoming) Contact URI
+	 *
+	 * Return: a session-stable contact ID
+	 */
+	uint64_t (*stable_contact_id) (urecord_t *r, const str *callid,
+	                               const str *ct_uri);
 } usrloc_api_t;
 
 

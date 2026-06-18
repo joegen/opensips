@@ -150,6 +150,14 @@ int get_simple_ucontact(urecord_t* _r, str* _c, struct ucontact** _co);
  */
 uint64_t next_contact_id(urecord_t* _r);
 
+/*! \brief
+ * Returns a contact_id for the given record that is stable across the
+ * REGISTER attempts of a single registration session (Call-ID + Contact URI),
+ * e.g. an initial REGISTER and its 401/407-authenticated retry.
+ */
+uint64_t stable_contact_id(urecord_t* _r, const str* _callid,
+                           const str* _ct_uri);
+
 /*
  * Prepares the K/V store of an urecord_t to be persisted to DB by serializing
  * it and storing it in one of the contact's K/V store using an internal key

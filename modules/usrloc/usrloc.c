@@ -80,6 +80,7 @@ int bind_usrloc(usrloc_api_t* api)
 	api->free_ucontact_coords        = free_ucontact_coords;
 	api->is_my_ucontact              = is_my_ucontact;
 	api->next_contact_id             = next_contact_id;
+	api->stable_contact_id           = stable_contact_id;
 	api->update_sipping_latency      = update_sipping_latency;
 	api->raise_ev_ct_refresh         = ul_raise_ct_refresh_event;
 

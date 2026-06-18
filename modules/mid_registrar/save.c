@@ -326,10 +326,14 @@ static int overwrite_req_contacts(struct sip_msg *req,
 			goto out_err;
 		}
 
-		ul.get_ucontact(r, &c->uri, &req->callid->body, cseq + 1, 
+		ul.get_ucontact(r, &c->uri, &req->callid->body, cseq + 1,
 			&mri->cmatch, &uc);
 		if (!uc)
-			ctid = ul.next_contact_id(r);
+			/* Derive the ctid from the session identity (Call-ID + Contact
+			 * URI) rather than a per-record counter, so the 401/407 auth
+			 * retry of a REGISTER reuses the same ctid as the initial
+			 * attempt, instead of advertising a new one upstream. */
+			ctid = ul.stable_contact_id(r, &req->callid->body, &c->uri);
 		else
 			ctid = uc->contact_id;
 
