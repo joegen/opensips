@@ -49,6 +49,20 @@ int ruri_add_param(struct sip_msg* _msg, str* _param);
 int ruri_del_param(struct sip_msg* _msg, str* _param);
 
 /*
+ * Contact parameter editing — family A (URI params, inside the Contact URI)
+ * and family B (header-field params, after the '>'). Forwarded-message-only;
+ * never touch user@host:port. See architecture/opensips/contact_param_editing.json.
+ */
+int contact_has_param(struct sip_msg* _msg, str* _name, str* _value, int* _index);
+int contact_add_param(struct sip_msg* _msg, str* _param, int* _index);
+int contact_del_param(struct sip_msg* _msg, str* _name, int* _index);
+int contact_set_param(struct sip_msg* _msg, str* _name, str* _value, int* _index);
+int contact_has_hdr_param(struct sip_msg* _msg, str* _name, str* _value, int* _index);
+int contact_add_hdr_param(struct sip_msg* _msg, str* _param, int* _index);
+int contact_del_hdr_param(struct sip_msg* _msg, str* _name, int* _index);
+int contact_set_hdr_param(struct sip_msg* _msg, str* _name, str* _value, int* _index);
+
+/*
  * Converts Request-URI, if it is tel URI, to SIP URI.  Returns 1, if
  * conversion succeeded or if no conversion was needed, i.e., Request-URI
  * was not tel URI.  Returns -1, if conversion failed.

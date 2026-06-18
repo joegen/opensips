@@ -589,6 +589,229 @@ ruri_del_param("user");
 		</example>
 	</section>
 
+	<section id="contact_param_editing">
+		<title>Contact parameter editing</title>
+		<para>
+		The <function>contact_*_param</function> and
+		<function>contact_*_hdr_param</function> families add, edit, remove and
+		test parameters on a <emphasis>Contact</emphasis> header, without ever
+		touching the <quote>user@host:port</quote> part of the contact URI (the
+		side-effect-free alternative to
+		<function>fix_nated_contact()</function>). They are the Contact-side
+		counterparts of the <function>ruri_*_param</function> functions.
+		</para>
+		<para>
+		There are two distinct parameter namespaces, edited by two families:
+		</para>
+		<itemizedlist>
+		<listitem><para><emphasis>URI parameters</emphasis> &mdash; inside the
+		contact URI, before the closing <quote>&gt;</quote> &mdash; are edited
+		by <function>contact_has_param</function>,
+		<function>contact_add_param</function>,
+		<function>contact_del_param</function> and
+		<function>contact_set_param</function>.</para></listitem>
+		<listitem><para><emphasis>header-field parameters</emphasis> &mdash;
+		after the <quote>&gt;</quote> (e.g. <quote>q</quote>,
+		<quote>expires</quote>, <quote>+sip.instance</quote>,
+		<quote>reg-id</quote>) &mdash; are edited by
+		<function>contact_has_hdr_param</function>,
+		<function>contact_add_hdr_param</function>,
+		<function>contact_del_hdr_param</function> and
+		<function>contact_set_hdr_param</function>.</para></listitem>
+		</itemizedlist>
+		<para>
+		All functions take an optional <emphasis>index</emphasis> (0-based,
+		default 0 = the top contact) selecting which contact to act on when the
+		message carries several;
+		<quote>Contact: *</quote> contacts occupy no index slot. They may be
+		called from REQUEST_ROUTE, ONREPLY_ROUTE, BRANCH_ROUTE and LOCAL_ROUTE.
+		</para>
+		<important><para>
+		These functions edit the <emphasis>forwarded</emphasis> message only.
+		They do <emphasis>not</emphasis> modify a saved usrloc binding, and they
+		take effect only on forwarded (relayed) replies, never on a reply the
+		server generates locally. A one-time warning is logged if they are used
+		on a REGISTER in the main request route.
+		</para></important>
+		<warning><para>
+		Editing a <emphasis>URI</emphasis> parameter changes Contact URI
+		identity under RFC 3261 &sect;19.1.4, which can break binding match /
+		de-registration; a one-time warning is logged for the well-known URI
+		params (transport, ttl, maddr, method, user, lr, gr, ob, comp). The
+		header-param family rejects the registrar-assigned
+		<quote>pub-gruu</quote>/<quote>temp-gruu</quote> (RFC 5627) and warns on
+		the other recognised standardised params (expires, q, +sip.instance,
+		reg-id, methods, received).
+		</para></warning>
+		<para>
+		v1 limitations: parameter values are not %HH-escaped; a header-param
+		value containing a double-quote, backslash, CR or LF is rejected (it
+		cannot be safely represented as an OpenSIPS quoted-string); deletion
+		removes the first matching occurrence.
+		</para>
+	</section>
+
+	<section id="func_contact_has_param" xreflabel="contact_has_param()">
+		<title>
+		<function moreinfo="none">contact_has_param(name[,value[,index]])</function>
+		</title>
+		<para>
+		Test whether the selected Contact URI carries a URI parameter
+		<emphasis>name</emphasis>. With <emphasis>value</emphasis>, requires a
+		case-sensitive value match; without it, matches the parameter
+		regardless of value. Parameter names match case-insensitively.
+		Returns <emphasis role='bold'>1</emphasis> if found,
+		<emphasis role='bold'>-1</emphasis> otherwise. Read-only.
+		</para>
+		<example>
+		<title><function>contact_has_param</function> usage</title>
+		<programlisting format="linespecific">
+...
+if (contact_has_param("transport","tcp")) { ... }
+...
+</programlisting>
+		</example>
+	</section>
+
+	<section id="func_contact_add_param" xreflabel="contact_add_param()">
+		<title>
+		<function moreinfo="none">contact_add_param(param[,index])</function>
+		</title>
+		<para>
+		Append a URI parameter (<quote>name</quote> or <quote>name=value</quote>)
+		inside the selected Contact URI. A bare addr-spec contact is
+		automatically wrapped in <quote>&lt;...&gt;</quote> first (so the new
+		parameter stays a URI parameter). Returns
+		<emphasis role='bold'>1</emphasis>/<emphasis role='bold'>-1</emphasis>.
+		</para>
+		<example>
+		<title><function>contact_add_param</function> usage</title>
+		<programlisting format="linespecific">
+...
+contact_add_param("x-dm=$fd");
+...
+</programlisting>
+		</example>
+	</section>
+
+	<section id="func_contact_del_param" xreflabel="contact_del_param()">
+		<title>
+		<function moreinfo="none">contact_del_param(name[,index])</function>
+		</title>
+		<para>
+		Remove the first URI parameter named <emphasis>name</emphasis> (and its
+		leading <quote>;</quote>) from the selected Contact URI. Returns
+		<emphasis role='bold'>1</emphasis>/<emphasis role='bold'>-1</emphasis>.
+		</para>
+		<example>
+		<title><function>contact_del_param</function> usage</title>
+		<programlisting format="linespecific">
+...
+contact_del_param("x-dm");
+...
+</programlisting>
+		</example>
+	</section>
+
+	<section id="func_contact_set_param" xreflabel="contact_set_param()">
+		<title>
+		<function moreinfo="none">contact_set_param(name,value[,index])</function>
+		</title>
+		<para>
+		Set URI parameter <emphasis>name</emphasis> to <emphasis>value</emphasis>
+		in the selected Contact URI, replacing an existing value or appending it
+		if absent (upsert). Returns
+		<emphasis role='bold'>1</emphasis>/<emphasis role='bold'>-1</emphasis>.
+		</para>
+		<example>
+		<title><function>contact_set_param</function> usage</title>
+		<programlisting format="linespecific">
+...
+contact_set_param("x-dm","gw1");
+...
+</programlisting>
+		</example>
+	</section>
+
+	<section id="func_contact_has_hdr_param" xreflabel="contact_has_hdr_param()">
+		<title>
+		<function moreinfo="none">contact_has_hdr_param(name[,value[,index]])</function>
+		</title>
+		<para>
+		Like <function>contact_has_param</function> but tests a Contact
+		<emphasis>header-field</emphasis> parameter (after the
+		<quote>&gt;</quote>), e.g. <quote>q</quote>, <quote>expires</quote>,
+		<quote>+sip.instance</quote>, <quote>reg-id</quote>. Read-only.
+		</para>
+		<example>
+		<title><function>contact_has_hdr_param</function> usage</title>
+		<programlisting format="linespecific">
+...
+if (contact_has_hdr_param("+sip.instance")) { ... }
+...
+</programlisting>
+		</example>
+	</section>
+
+	<section id="func_contact_add_hdr_param" xreflabel="contact_add_hdr_param()">
+		<title>
+		<function moreinfo="none">contact_add_hdr_param(param[,index])</function>
+		</title>
+		<para>
+		Append a Contact header-field parameter
+		(<quote>name</quote> or <quote>name=value</quote>) after the
+		<quote>&gt;</quote>. The value is the literal (unquoted) value; it is
+		automatically quoted on the wire when it contains non-token characters.
+		Returns <emphasis role='bold'>1</emphasis>/<emphasis role='bold'>-1</emphasis>.
+		</para>
+		<example>
+		<title><function>contact_add_hdr_param</function> usage</title>
+		<programlisting format="linespecific">
+...
+contact_add_hdr_param("x-tag=$avp(t)");
+...
+</programlisting>
+		</example>
+	</section>
+
+	<section id="func_contact_del_hdr_param" xreflabel="contact_del_hdr_param()">
+		<title>
+		<function moreinfo="none">contact_del_hdr_param(name[,index])</function>
+		</title>
+		<para>
+		Remove the first Contact header-field parameter named
+		<emphasis>name</emphasis>. Returns
+		<emphasis role='bold'>1</emphasis>/<emphasis role='bold'>-1</emphasis>.
+		</para>
+		<example>
+		<title><function>contact_del_hdr_param</function> usage</title>
+		<programlisting format="linespecific">
+...
+contact_del_hdr_param("expires");
+...
+</programlisting>
+		</example>
+	</section>
+
+	<section id="func_contact_set_hdr_param" xreflabel="contact_set_hdr_param()">
+		<title>
+		<function moreinfo="none">contact_set_hdr_param(name,value[,index])</function>
+		</title>
+		<para>
+		Upsert a Contact header-field parameter (replace or append). The value
+		is the literal (unquoted) value and is quoted automatically when needed.
+		Returns <emphasis role='bold'>1</emphasis>/<emphasis role='bold'>-1</emphasis>.
+		</para>
+		<example>
+		<title><function>contact_set_hdr_param</function> usage</title>
+		<programlisting format="linespecific">
+...
+contact_set_hdr_param("expires","60");
+...
+</programlisting>
+		</example>
+	</section>
+
 	<section id="func_ruri_tel2sip" xreflabel="ruri_tel2sip()">
 		<title>
 		<function moreinfo="none">ruri_tel2sip()</function>

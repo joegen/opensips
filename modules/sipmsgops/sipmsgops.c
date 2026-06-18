@@ -286,6 +286,54 @@ static const cmd_export_t cmds[]={
 		{CMD_PARAM_STR, 0, 0}, {0, 0, 0}},
 		REQUEST_ROUTE|FAILURE_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
 
+	/* Contact parameter editing — forwarded-message-only; never touch
+	 * user@host:port. Mask = REQUEST|ONREPLY|BRANCH|LOCAL (modeled on
+	 * nathelper fix_nated_contact): ONREPLY present (forwarded replies),
+	 * FAILURE absent (do NOT copy the ruri_* mask above — wrong for these). */
+	{"contact_has_param", (cmd_function)contact_has_param, {
+		{CMD_PARAM_STR, 0, 0},
+		{CMD_PARAM_STR|CMD_PARAM_OPT, 0, 0},
+		{CMD_PARAM_INT|CMD_PARAM_OPT, 0, 0}, {0, 0, 0}},
+		REQUEST_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
+
+	{"contact_add_param", (cmd_function)contact_add_param, {
+		{CMD_PARAM_STR, 0, 0},
+		{CMD_PARAM_INT|CMD_PARAM_OPT, 0, 0}, {0, 0, 0}},
+		REQUEST_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
+
+	{"contact_del_param", (cmd_function)contact_del_param, {
+		{CMD_PARAM_STR, 0, 0},
+		{CMD_PARAM_INT|CMD_PARAM_OPT, 0, 0}, {0, 0, 0}},
+		REQUEST_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
+
+	{"contact_set_param", (cmd_function)contact_set_param, {
+		{CMD_PARAM_STR, 0, 0},
+		{CMD_PARAM_STR, 0, 0},
+		{CMD_PARAM_INT|CMD_PARAM_OPT, 0, 0}, {0, 0, 0}},
+		REQUEST_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
+
+	{"contact_has_hdr_param", (cmd_function)contact_has_hdr_param, {
+		{CMD_PARAM_STR, 0, 0},
+		{CMD_PARAM_STR|CMD_PARAM_OPT, 0, 0},
+		{CMD_PARAM_INT|CMD_PARAM_OPT, 0, 0}, {0, 0, 0}},
+		REQUEST_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
+
+	{"contact_add_hdr_param", (cmd_function)contact_add_hdr_param, {
+		{CMD_PARAM_STR, 0, 0},
+		{CMD_PARAM_INT|CMD_PARAM_OPT, 0, 0}, {0, 0, 0}},
+		REQUEST_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
+
+	{"contact_del_hdr_param", (cmd_function)contact_del_hdr_param, {
+		{CMD_PARAM_STR, 0, 0},
+		{CMD_PARAM_INT|CMD_PARAM_OPT, 0, 0}, {0, 0, 0}},
+		REQUEST_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
+
+	{"contact_set_hdr_param", (cmd_function)contact_set_hdr_param, {
+		{CMD_PARAM_STR, 0, 0},
+		{CMD_PARAM_STR, 0, 0},
+		{CMD_PARAM_INT|CMD_PARAM_OPT, 0, 0}, {0, 0, 0}},
+		REQUEST_ROUTE|ONREPLY_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
+
 	{"ruri_tel2sip", (cmd_function)ruri_tel2sip, {{0, 0, 0}},
 		REQUEST_ROUTE|FAILURE_ROUTE|BRANCH_ROUTE|LOCAL_ROUTE},
 
