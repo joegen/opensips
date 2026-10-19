@@ -1,0 +1,256 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<!DOCTYPE scenario SYSTEM "sipp.dtd">
+<scenario name="T-20 pair 2 UAS: re-INVITE with SDP on moved port 6048 crosses the UAC re-INVITE; 491 both ways; retries">
+  <recv request="INVITE" rrs="true">
+    <action>
+      <ereg regexp="o=[^\r\n]+" search_in="body" check_it="true" assign_to="o_1"/>
+      <ereg regexp="m=audio [0-9]+ RTP/AVP [0-9 ]+" search_in="body" check_it="true" assign_to="m_1"/>
+      <log message="INVITE offer at UAS [$o_1] [$m_1]"/>
+      <ereg regexp=";tag=([^;>]+)" search_in="hdr" header="From:" check_it="true" assign_to="ftag_all,pbx_tag"/>
+      <log message="PBX tag [$pbx_tag] [$ftag_all]"/>
+    </action>
+  </recv>
+  <send>
+    <![CDATA[
+      SIP/2.0 180 Ringing
+      [last_Via:]
+      [last_From:]
+      [last_To:];tag=[pid]SIPpTag01[call_number]
+      [last_Call-ID:]
+      [last_CSeq:]
+      [last_Record-Route:]
+      Contact: <sip:karoo@[local_ip]:[local_port];transport=[transport]>
+      Content-Length: 0
+
+    ]]>
+  </send>
+  <send retrans="500">
+    <![CDATA[
+      SIP/2.0 200 OK
+      [last_Via:]
+      [last_From:]
+      [last_To:];tag=[pid]SIPpTag01[call_number]
+      [last_Call-ID:]
+      [last_CSeq:]
+      [last_Record-Route:]
+      Contact: <sip:karoo@[local_ip]:[local_port];transport=[transport]>
+      Content-Type: application/sdp
+      Content-Length: [len]
+
+      v=0
+      o=mediant 2001 1 IN IP4 [media_ip]
+      s=-
+      c=IN IP4 [media_ip]
+      t=0 0
+      m=audio [rtpstream_audio_port] RTP/AVP 0 101
+      a=rtpmap:0 PCMU/8000
+      a=rtpmap:101 telephone-event/8000
+      a=fmtp:101 0-15
+      a=sendrecv
+
+    ]]>
+  </send>
+  <recv request="ACK" crlf="true"/>
+  <nop>
+    <action>
+      <exec rtp_stream="tone_pcmu.wav,-1,0"/>
+    </action>
+  </nop>
+  <recv request="INVITE">
+    <action>
+      <ereg regexp="m=audio [0-9]+ RTP/AVP [0-9 ]+|Content-Length: *0" search_in="msg" check_it="true" assign_to="UAC re-INVITE A at UAS_m"/>
+      <log message="UAC re-INVITE A at UAS [$UAC re-INVITE A at UAS_m]"/>
+      <ereg regexp=".*" search_in="hdr" header="Via:" check_it="true" assign_to="cvia"/>
+      <ereg regexp=".*" search_in="hdr" header="From:" check_it="true" assign_to="cfrom"/>
+      <ereg regexp=".*" search_in="hdr" header="To:" check_it="true" assign_to="cto"/>
+      <log message="captured [$cvia] [$cfrom] [$cto]"/>
+    </action>
+  </recv>
+  <send>
+    <![CDATA[
+      SIP/2.0 100 Trying
+      [last_Via:]
+      [last_From:]
+      [last_To:]
+      [last_Call-ID:]
+      [last_CSeq:]
+      Contact: <sip:karoo@[local_ip]:[local_port];transport=[transport]>
+      Content-Length: 0
+
+    ]]>
+  </send>
+  <nop>
+    <action>
+      <exec rtp_stream="pause"/>
+    </action>
+  </nop>
+  <send retrans="500">
+    <![CDATA[
+      INVITE [next_url] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      [routes]
+      From: <sip:late@[local_ip]:[local_port]>;tag=[pid]SIPpTag01[call_number]
+      To: "pbx" <sip:pbx@[remote_ip]>;tag=[$pbx_tag]
+      Call-ID: [call_id]
+      CSeq: 1 INVITE
+      Contact: <sip:karoo@[local_ip]:[local_port];transport=[transport]>
+      Max-Forwards: 70
+      Content-Type: application/sdp
+      Content-Length: [len]
+
+      v=0
+      o=mediant 2001 2 IN IP4 [media_ip]
+      s=-
+      c=IN IP4 [media_ip]
+      t=0 0
+      m=audio 6048 RTP/AVP 0 101
+      a=rtpmap:0 PCMU/8000
+      a=rtpmap:101 telephone-event/8000
+      a=fmtp:101 0-15
+      a=sendrecv
+
+    ]]>
+  </send>
+  <recv response="100" optional="true"/>
+  <recv response="491">
+    <action>
+      <ereg regexp="m=audio [0-9]+ RTP/AVP [0-9 ]+|Content-Length: *0" search_in="msg" check_it="true" assign_to="491 for B at UAS_m"/>
+      <log message="491 for B at UAS [$491 for B at UAS_m]"/>
+    </action>
+  </recv>
+  <send>
+    <![CDATA[
+      ACK [next_url] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch-3]
+      [routes]
+      From: <sip:late@[local_ip]:[local_port]>;tag=[pid]SIPpTag01[call_number]
+      To: "pbx" <sip:pbx@[remote_ip]>;tag=[$pbx_tag]
+      Call-ID: [call_id]
+      CSeq: 1 ACK
+      Max-Forwards: 70
+      Content-Length: 0
+
+    ]]>
+  </send>
+  <send>
+    <![CDATA[
+      SIP/2.0 491 Request Pending
+      Via: [$cvia]
+      From: [$cfrom]
+      To: [$cto]
+      [last_Call-ID:]
+      CSeq: 2 INVITE
+      Contact: <sip:karoo@[local_ip]:[local_port];transport=[transport]>
+      Content-Length: 0
+
+    ]]>
+  </send>
+  <recv request="ACK"/>
+  <pause milliseconds="1000"/>
+  <send retrans="500">
+    <![CDATA[
+      INVITE [next_url] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      [routes]
+      From: <sip:late@[local_ip]:[local_port]>;tag=[pid]SIPpTag01[call_number]
+      To: "pbx" <sip:pbx@[remote_ip]>;tag=[$pbx_tag]
+      Call-ID: [call_id]
+      CSeq: 2 INVITE
+      Contact: <sip:karoo@[local_ip]:[local_port];transport=[transport]>
+      Max-Forwards: 70
+      Content-Type: application/sdp
+      Content-Length: [len]
+
+      v=0
+      o=mediant 2001 3 IN IP4 [media_ip]
+      s=-
+      c=IN IP4 [media_ip]
+      t=0 0
+      m=audio [rtpstream_audio_port] RTP/AVP 0 101
+      a=rtpmap:0 PCMU/8000
+      a=rtpmap:101 telephone-event/8000
+      a=fmtp:101 0-15
+      a=sendrecv
+
+    ]]>
+  </send>
+  <recv response="100" optional="true"/>
+  <recv response="200">
+    <action>
+      <ereg regexp="m=audio [0-9]+ RTP/AVP [0-9 ]+|Content-Length: *0" search_in="msg" check_it="true" assign_to="retry B2 answer at UAS_m"/>
+      <log message="retry B2 answer at UAS [$retry B2 answer at UAS_m]"/>
+    </action>
+  </recv>
+  <send>
+    <![CDATA[
+      ACK [next_url] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      [routes]
+      From: <sip:late@[local_ip]:[local_port]>;tag=[pid]SIPpTag01[call_number]
+      To: "pbx" <sip:pbx@[remote_ip]>;tag=[$pbx_tag]
+      Call-ID: [call_id]
+      CSeq: 2 ACK
+      Contact: <sip:karoo@[local_ip]:[local_port];transport=[transport]>
+      Max-Forwards: 70
+      Content-Length: 0
+
+    ]]>
+  </send>
+  <pause milliseconds="500"/>
+  <nop>
+    <action>
+      <exec rtp_stream="resume"/>
+    </action>
+  </nop>
+  <recv request="INVITE">
+    <action>
+      <ereg regexp="m=audio [0-9]+ RTP/AVP [0-9 ]+|Content-Length: *0" search_in="msg" check_it="true" assign_to="UAC retry A2 at UAS_m"/>
+      <log message="UAC retry A2 at UAS [$UAC retry A2 at UAS_m]"/>
+    </action>
+  </recv>
+  <send retrans="500">
+    <![CDATA[
+      SIP/2.0 200 OK
+      [last_Via:]
+      [last_From:]
+      [last_To:]
+      [last_Call-ID:]
+      [last_CSeq:]
+      Contact: <sip:karoo@[local_ip]:[local_port];transport=[transport]>
+      Content-Type: application/sdp
+      Content-Length: [len]
+
+      v=0
+      o=mediant 2001 3 IN IP4 [media_ip]
+      s=-
+      c=IN IP4 [media_ip]
+      t=0 0
+      m=audio [rtpstream_audio_port] RTP/AVP 0 101
+      a=rtpmap:0 PCMU/8000
+      a=rtpmap:101 telephone-event/8000
+      a=fmtp:101 0-15
+      a=sendrecv
+
+    ]]>
+  </send>
+  <recv request="ACK">
+    <action>
+      <ereg regexp="m=audio [0-9]+ RTP/AVP [0-9 ]+|Content-Length: *0" search_in="msg" check_it="true" assign_to="ACK for A2 at UAS_m"/>
+      <log message="ACK for A2 at UAS [$ACK for A2 at UAS_m]"/>
+    </action>
+  </recv>
+  <recv request="BYE"/>
+  <send>
+    <![CDATA[
+      SIP/2.0 200 OK
+      [last_Via:]
+      [last_From:]
+      [last_To:]
+      [last_Call-ID:]
+      [last_CSeq:]
+      Contact: <sip:karoo@[local_ip]:[local_port];transport=[transport]>
+      Content-Length: 0
+
+    ]]>
+  </send>
+</scenario>

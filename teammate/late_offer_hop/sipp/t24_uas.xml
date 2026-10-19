@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<!DOCTYPE scenario SYSTEM "sipp.dtd">
+<scenario name="T-24 UAS: answers, receives the ACK, then re-sends its 200 after RTPEngine is stopped">
+  <recv request="INVITE" rrs="true">
+    <action>
+      <ereg regexp="o=[^\r\n]+" search_in="body" check_it="true" assign_to="o_1"/>
+      <ereg regexp="m=audio [0-9]+ RTP/AVP [0-9 ]+" search_in="body" check_it="true" assign_to="m_1"/>
+      <log message="INVITE offer at UAS [$o_1] [$m_1]"/>
+      <ereg regexp=";tag=([^;>]+)" search_in="hdr" header="From:" check_it="true" assign_to="ftag_all,pbx_tag"/>
+      <log message="PBX tag [$pbx_tag] [$ftag_all]"/>
+      <ereg regexp=".*" search_in="hdr" header="Via:" check_it="true" assign_to="ivia"/>
+      <log message="INVITE Via [$ivia]"/>
+    </action>
+  </recv>
+  <send>
+    <![CDATA[
+      SIP/2.0 180 Ringing
+      [last_Via:]
+      [last_From:]
+      [last_To:];tag=[pid]SIPpTag01[call_number]
+      [last_Call-ID:]
+      [last_CSeq:]
+      [last_Record-Route:]
+      Contact: <sip:karoo@[local_ip]:[local_port];transport=[transport]>
+      Content-Length: 0
+
+    ]]>
+  </send>
+  <send>
+    <![CDATA[
+      SIP/2.0 180 Ringing
+      [last_Via:]
+      [last_From:]
+      [last_To:];tag=[pid]SIPpTag01[call_number]
+      [last_Call-ID:]
+      [last_CSeq:]
+      [last_Record-Route:]
+      Contact: <sip:karoo@[local_ip]:[local_port];transport=[transport]>
+      Content-Length: 0
+
+    ]]>
+  </send>
+  <send retrans="500">
+    <![CDATA[
+      SIP/2.0 200 OK
+      [last_Via:]
+      [last_From:]
+      [last_To:];tag=[pid]SIPpTag01[call_number]
+      [last_Call-ID:]
+      [last_CSeq:]
+      [last_Record-Route:]
+      Contact: <sip:karoo@[local_ip]:[local_port];transport=[transport]>
+      Content-Type: application/sdp
+      Content-Length: [len]
+
+      v=0
+      o=mediant 2001 1 IN IP4 [media_ip]
+      s=-
+      c=IN IP4 [media_ip]
+      t=0 0
+      m=audio [rtpstream_audio_port] RTP/AVP 0 101
+      a=rtpmap:0 PCMU/8000
+      a=rtpmap:101 telephone-event/8000
+      a=fmtp:101 0-15
+      a=sendrecv
+
+    ]]>
+  </send>
+  <recv request="ACK">
+    <action>
+      <ereg regexp="Content-Length: *[0-9]+" search_in="msg" check_it="true" assign_to="clack"/>
+      <ereg regexp="v=0" search_in="body" check_it_inverse="true" assign_to="ackbody"/>
+      <log message="initial ACK at UAS [$clack] (body must be empty) [$ackbody]"/>
+    </action>
+  </recv>
+  <pause milliseconds="2400"/>
+  <send>
+    <![CDATA[
+      SIP/2.0 200 OK
+      Via: [$ivia]
+      [last_From:]
+      [last_To:]
+      [last_Call-ID:]
+      CSeq: 1 INVITE
+      [last_Record-Route:]
+      Contact: <sip:karoo@[local_ip]:[local_port];transport=[transport]>
+      Content-Type: application/sdp
+      Content-Length: [len]
+
+      v=0
+      o=mediant 2001 1 IN IP4 [media_ip]
+      s=-
+      c=IN IP4 [media_ip]
+      t=0 0
+      m=audio [rtpstream_audio_port] RTP/AVP 0 101
+      a=rtpmap:0 PCMU/8000
+      a=rtpmap:101 telephone-event/8000
+      a=fmtp:101 0-15
+      a=sendrecv
+
+    ]]>
+  </send>
+  <recv request="ACK" crlf="true"/>
+  <recv request="BYE"/>
+  <send>
+    <![CDATA[
+      SIP/2.0 200 OK
+      [last_Via:]
+      [last_From:]
+      [last_To:]
+      [last_Call-ID:]
+      [last_CSeq:]
+      Content-Length: 0
+
+    ]]>
+  </send>
+</scenario>

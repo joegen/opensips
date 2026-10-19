@@ -84,7 +84,7 @@ set -e
 sleep 1
 stop_hop
 sudo -n kill "$tcpdump_pid" 2>/dev/null || true
-sudo -n journalctl --no-pager -q --since "$start_ts" -t opensips > "$out/opensips.log" 2>&1 || true
+sudo -n journalctl --no-pager -q --since "$start_ts" _COMM=opensips > "$out/opensips.log" 2>&1 || true
 wait "$tcpdump_pid" 2>/dev/null || true
 
 if [ "$(docker inspect -f '{{.State.Running}}' rtpengine-lo 2>/dev/null)" != "true" ]; then

@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<!DOCTYPE scenario SYSTEM "sipp.dtd">
+<scenario name="T-21b UAC: answers with telephone-event at PT 96 and sends RFC 4733 events at PT 96">
+  <send retrans="500">
+    <![CDATA[
+      INVITE sip:[service]@[remote_ip]:[remote_port] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      From: "pbx" <sip:pbx@[local_ip]:[local_port]>;tag=[pid]SIPpTag00[call_number]
+      To: <sip:[service]@[remote_ip]:[remote_port]>
+      Call-ID: [call_id]
+      CSeq: 1 INVITE
+      Contact: <sip:pbx@[local_ip]:[local_port];transport=[transport]>
+      Max-Forwards: 70
+      Supported: replaces, timer
+      Allow: INVITE, ACK, CANCEL, BYE, UPDATE, OPTIONS
+      Content-Length: 0
+
+    ]]>
+  </send>
+  <recv response="100" optional="true"/>
+  <recv response="180" optional="true"/>
+  <recv response="183" optional="true"/>
+  <recv response="200" rrs="true">
+    <action>
+      <ereg regexp="m=audio [0-9]+ RTP/AVP [0-9 ]+" search_in="body" check_it="true" assign_to="offer_m"/>
+      <ereg regexp="c=IN IP4 [0-9.]+" search_in="body" check_it="true" assign_to="offer_c"/>
+      <log message="200 offer [$offer_m] [$offer_c]"/>
+    </action>
+  </recv>
+  <send>
+    <![CDATA[
+      ACK [next_url] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      [routes]
+      From: "pbx" <sip:pbx@[local_ip]:[local_port]>;tag=[pid]SIPpTag00[call_number]
+      To: <sip:[service]@[remote_ip]:[remote_port]>[peer_tag_param]
+      Call-ID: [call_id]
+      CSeq: 1 ACK
+      Contact: <sip:pbx@[local_ip]:[local_port];transport=[transport]>
+      Max-Forwards: 70
+      Content-Type: application/sdp
+      Content-Length: [len]
+
+      v=0
+      o=pbx 1001 1 IN IP4 [media_ip]
+      s=-
+      c=IN IP4 [media_ip]
+      t=0 0
+      m=audio [rtpstream_audio_port] RTP/AVP 0 96
+      a=rtpmap:0 PCMU/8000
+      a=rtpmap:96 telephone-event/8000
+      a=fmtp:96 0-15
+      a=sendrecv
+
+    ]]>
+  </send>
+  <nop>
+    <action>
+      <exec rtp_stream="tone_pcmu.wav,-1,0"/>
+    </action>
+  </nop>
+  <pause milliseconds="3500"/>
+  <nop>
+    <action>
+      <exec play_pcap_audio="dtmf5_pt96.pcap"/>
+    </action>
+  </nop>
+  <pause milliseconds="3000"/>
+  <send retrans="500">
+    <![CDATA[
+      BYE [next_url] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      [routes]
+      From: "pbx" <sip:pbx@[local_ip]:[local_port]>;tag=[pid]SIPpTag00[call_number]
+      To: <sip:[service]@[remote_ip]:[remote_port]>[peer_tag_param]
+      Call-ID: [call_id]
+      CSeq: 3 BYE
+      Contact: <sip:pbx@[local_ip]:[local_port];transport=[transport]>
+      Max-Forwards: 70
+      Content-Length: 0
+
+    ]]>
+  </send>
+  <recv response="200" crlf="true"/>
+</scenario>
