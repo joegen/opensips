@@ -20,16 +20,16 @@
   <recv response="100" optional="true"/>
   <recv response="183">
     <action>
-      <ereg regexp="Content-Length: *[0-9]+" search_in="msg" check_it="true" assign_to="c183_1"/>
-      <ereg regexp="Content-Type" search_in="msg" check_it="false" assign_to="t183_1"/>
+      <ereg regexp="Content-Length: *0[[:space:]]" search_in="msg" check_it="true" assign_to="c183_1"/>
+      <ereg regexp="Content-Type" search_in="msg" check_it_inverse="true" assign_to="t183_1"/>
       <ereg regexp="To:[^\r\n]*tag=[^;\r\n]+" search_in="msg" check_it="true" assign_to="to183_1"/>
       <log message="183 #1: [$c183_1] ctype=[$t183_1] [$to183_1]"/>
     </action>
   </recv>
   <recv response="183">
     <action>
-      <ereg regexp="Content-Length: *[0-9]+" search_in="msg" check_it="true" assign_to="c183_2"/>
-      <ereg regexp="Content-Type" search_in="msg" check_it="false" assign_to="t183_2"/>
+      <ereg regexp="Content-Length: *0[[:space:]]" search_in="msg" check_it="true" assign_to="c183_2"/>
+      <ereg regexp="Content-Type" search_in="msg" check_it_inverse="true" assign_to="t183_2"/>
       <ereg regexp="To:[^\r\n]*tag=[^;\r\n]+" search_in="msg" check_it="true" assign_to="to183_2"/>
       <log message="183 #2: [$c183_2] ctype=[$t183_2] [$to183_2]"/>
     </action>

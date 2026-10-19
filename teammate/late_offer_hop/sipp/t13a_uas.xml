@@ -5,7 +5,9 @@
     <action>
       <ereg regexp="m=audio [0-9]+ RTP/AVP [0-9 ]+" search_in="body" check_it="true" assign_to="inv_m"/>
       <log message="INVITE offer [$inv_m]"/>
-      <ereg regexp="Supported:[^\r\n]*" search_in="msg" check_it="false" assign_to="sup"/>
+      <ereg regexp="Supported:[^\r\n]*" search_in="msg" check_it="true" assign_to="sup"/>
+      <ereg regexp="Supported:[^\r\n]*100rel" search_in="msg" check_it_inverse="true" assign_to="sup100rel"/>
+      <log message="100rel in Supported (must be empty) [$sup100rel]"/>
       <log message="converted INVITE [$sup]"/>
     </action>
   </recv>

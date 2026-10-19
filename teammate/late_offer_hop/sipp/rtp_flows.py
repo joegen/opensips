@@ -3,14 +3,17 @@ import subprocess
 import sys
 
 
-def packets(pcap, exclude_ports=(22222, 5060, 5070, 5080, 53)):
-    out = subprocess.run(
-        ["tshark", "-r", pcap, "-Y", "udp", "-T", "fields", "-e", "frame.time_relative",
-         "-e", "ip.src", "-e", "udp.srcport", "-e", "ip.dst", "-e", "udp.dstport", "-e", "ip.id"],
-        check=True, capture_output=True, text=True).stdout
+def packets(pcap, exclude_ports=(22222, 5060, 5070, 5080, 53), with_payload=False):
+    fields = ["frame.time_relative", "ip.src", "udp.srcport", "ip.dst", "udp.dstport", "ip.id"]
+    if with_payload:
+        fields.append("udp.payload")
+    cmd = ["tshark", "-r", pcap, "-Y", "udp", "-T", "fields"]
+    for f in fields:
+        cmd += ["-e", f]
+    out = subprocess.run(cmd, check=True, capture_output=True, text=True).stdout
     seen = set()
     for line in out.splitlines():
-        t, src, sport, dst, dport, ipid = line.split("\t")
+        t, src, sport, dst, dport, ipid, payload = (line.split("\t") + [""])[:7]
         sport, dport = int(sport), int(dport)
         if sport in exclude_ports or dport in exclude_ports:
             continue
@@ -18,7 +21,10 @@ def packets(pcap, exclude_ports=(22222, 5060, 5070, 5080, 53)):
         if key in seen:
             continue
         seen.add(key)
-        yield float(t), f"{src}:{sport}", f"{dst}:{dport}"
+        if with_payload:
+            yield float(t), f"{src}:{sport}", f"{dst}:{dport}", payload
+        else:
+            yield float(t), f"{src}:{sport}", f"{dst}:{dport}"
 
 
 def main():

@@ -59,20 +59,18 @@ def main():
     for t, direction, cookie, body in messages(pcap):
         if direction == "req":
             pending[cookie] = body
-            cmd = text(body.get("command"))
-            cid = text(body.get("call-id", b""))
-            if cmd == "ping" or (call_id and cid != call_id):
-                continue
+            req = body
+        else:
+            req = pending.pop(cookie, {})
+        cmd = text(req.get("command"))
+        cid = text(req.get("call-id", b""))
+        if cmd == "ping" or (call_id and cid != call_id):
+            continue
+        if direction == "req":
             print(f"{t:9.3f} {cmd:8} call-id={cid} from-tag={text(body.get('from-tag', b''))} "
                   f"to-tag={text(body.get('to-tag', b''))} flags={[text(x) for x in body.get('flags', [])]}")
         else:
-            req = pending.pop(cookie, {})
-            cmd = text(req.get("command"))
-            cid = text(req.get("call-id", b""))
-            if cmd == "ping" or (call_id and cid != call_id):
-                continue
             print(f"{t:9.3f}   -> {cmd} result={text(body.get('result'))}")
-
 
 if __name__ == "__main__":
     main()

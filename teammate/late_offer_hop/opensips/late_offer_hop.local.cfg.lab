@@ -2,5 +2,5 @@ loadmodule "proto_<proto>.so"
 socket=<proto>:<HOP_IP>:<HOP_PORT>
 
 route[lo_local_settings] {
-  $var(lo_karoo_uri) = "sip:<KAROO_IP>:5060";
+  $var(lo_karoo_uri) = "sip:<KAROO_IP>:5060";            # add ';transport=tcp' if the Edge leg is TCP
 }

@@ -20,13 +20,6 @@ latest() {
   ls -d "$LO_RESULTS_DIR/$1"-* | tail -1
 }
 
-ng_count() {
-  local dir="$1"
-  local cid
-  cid="$(grep -m1 -i '^Call-ID:' "$dir/uac_messages.log" | awk '{print $2}' | tr -d '\r')"
-  python3 -I "$here/ng_log.py" "$dir/capture.pcap" "$cid" | grep -vc -- '->'
-}
-
 echo "fork $(git -C "$fork" rev-parse HEAD)" | tee -a "$summary"
 cd "$here" || exit 1
 
@@ -64,103 +57,98 @@ else
 fi
 
 case_run() {
-  local row="$1" case_name="$2" uac="$3" uas="$4" transport="${5:-udp}" expect_uas="${6:-0}"
-  local out rc_line uac_rc uas_rc dir verdict note
+  local case_name="$1" uac="$2" uas="$3" transport="${4:-udp}" expect_uas="${5:-0}"
+  local out uac_rc uas_rc
   out="$(./run_case.sh "$case_name" "$uac" "$uas" "$transport" 2>&1 | tail -1)"
   uac_rc="$(sed -n 's/.*uac_rc=\([0-9]*\).*/\1/p' <<< "$out")"
   uas_rc="$(sed -n 's/.*uas_rc=\([0-9]*\).*/\1/p' <<< "$out")"
-  dir="$(latest "$case_name")"
-  verdict=PASS
-  note="uac_rc=$uac_rc uas_rc=$uas_rc"
-  [ "$uac_rc" = 0 ] || verdict=FAIL
-  [ "$uas_rc" = "$expect_uas" ] || verdict=FAIL
-  LAST_DIR="$dir"
-  LAST_VERDICT="$verdict"
-  LAST_NOTE="$note"
-}
-
-check_t01() {
-  python3 -I "$here/check_t01.py" "$LAST_DIR" > "$LAST_DIR/check_t01.txt" 2>&1 || LAST_VERDICT=FAIL
-  LAST_NOTE="$LAST_NOTE t01checks=$(grep -c PASS "$LAST_DIR/check_t01.txt")/$(grep -cE 'PASS|FAIL' "$LAST_DIR/check_t01.txt")"
-}
-
-zero_ng() {
-  local n
-  n="$(ng_count "$LAST_DIR")"
-  LAST_NOTE="$LAST_NOTE ng=$n"
-  [ "$n" = 0 ] || LAST_VERDICT=FAIL
-}
-
-nothing_at_uas() {
-  local n
-  n="$(grep -c 'message received' "$LAST_DIR/uas_messages.log" 2>/dev/null)"
-  LAST_NOTE="$LAST_NOTE uas_received=${n:-0}"
-  [ "${n:-0}" = 0 ] || LAST_VERDICT=FAIL
+  LAST_DIR="$(latest "$case_name")"
+  LAST_VERDICT=PASS
+  LAST_NOTE="uac_rc=$uac_rc uas_rc=$uas_rc"
+  [ "$uac_rc" = 0 ] && [ "$uas_rc" = "$expect_uas" ] || LAST_VERDICT=FAIL
+  if python3 -I "$here/row_checks.py" "$case_name" "$LAST_DIR" > "$LAST_DIR/row_checks.txt" 2>&1; then
+    LAST_METHOD=AUTO
+  elif grep -q '^NOCHECK' "$LAST_DIR/row_checks.txt"; then
+    LAST_METHOD=SCENARIO
+  else
+    LAST_METHOD=AUTO
+    LAST_VERDICT=FAIL
+  fi
+  CASE_VERDICT[$case_name]="$LAST_VERDICT"
 }
 
 row() {
-  record "$1" "$LAST_VERDICT" "$2 $LAST_NOTE $LAST_DIR"
+  record "$1" "$LAST_VERDICT" "$LAST_METHOD $2 $LAST_NOTE $LAST_DIR"
 }
 
-case_run T-01 t01udp uac_late_offer.xml uas_answer.xml udp; check_t01; row T-01 "udp"
-case_run T-01 t01tcp uac_late_offer.xml uas_answer.xml tcp; check_t01; row T-01 "tcp"
-case_run T-02 t02a t02a_uac.xml uas_answer.xml; check_t01; row T-02 "(a)"
-case_run T-02 t02b t02b_uac.xml uas_answer.xml; check_t01; row T-02 "(b)"
-LO_CALLS=2 LO_UAC_ARGS="-l 1" case_run T-03 t03seq uac_late_offer.xml uas_answer.xml; row T-03 "in a row"
-LO_CALLS=2 LO_UAC_ARGS="-r 20 -rp 1000" case_run T-03 t03same uac_late_offer.xml uas_answer.xml; row T-03 "same second"
-case_run T-04 t04a uac_late_offer.xml uas_answer.xml; row T-04 "BYE from UAC"
-case_run T-04 t04b t04b_uac.xml t04b_uas.xml; row T-04 "BYE from UAS"
-case_run T-05 t05 t05_uac.xml t05_uas.xml; zero_ng; row T-05 "OPTIONS"
-case_run T-06 t06 uac_late_offer.xml uas_answer.xml; row T-06 "S3/S4 NG"
-case_run T-07 t07 t07_uac.xml t07_uas.xml; row T-07 ""
-case_run T-07 t07r t07r_uac.xml t07r_uas.xml; row T-07 "(r)"
-case_run T-09 t09r1 t09r1_uac.xml t09r1_uas.xml; row T-09 "run 1"
-case_run T-09 t09r2 t09r2_uac.xml t09r2_uas.xml; row T-09 "run 2"
-case_run T-10 t10r1 t10r1_uac.xml t10r1_uas.xml; row T-10 "run 1"
-case_run T-10 t10r2 t10r2_uac.xml t10r2_uas.xml; row T-10 "run 2"
-LAST_VERDICT=PASS; for r in T-09 T-10; do grep -q "^$r FAIL" "$summary" && LAST_VERDICT=FAIL; done
-record T-08 "$LAST_VERDICT" "shown by the T-09 and T-10 traces (S7 on the CSeq 2 downstream ACK and the upstream ACK)"
-case_run T-11 t11_488 t11_488_uac.xml t11_488_uas.xml; row T-11 "488"
-case_run T-11 t11_491 t11_491_uac.xml t11_491_uas.xml; row T-11 "491"
-case_run T-11 t11_retr t11_retr_uac.xml t11_retr_uas.xml; row T-11 "retransmission"
-LO_STOP_RTPENGINE_AT=1 case_run T-11 t11_down t11_down_uac.xml t11_down_uas.xml; row T-11 "RTPEngine down"
-LO_STOP_RTPENGINE_AT=3 case_run T-11 t11_downack t11_downack_uac.xml t11_downack_uas.xml; row T-11 "RTPEngine down before ACK"
-case_run T-12 t12 t12_uac.xml t12_uas.xml; row T-12 ""
-case_run T-13 t13a t13a_uac.xml t13a_uas.xml; row T-13 "(a)"
-LO_UAS_ARGS="-timeout 6" case_run T-13 t13b t13b_uac.xml t13b_uas.xml udp 97; zero_ng; nothing_at_uas; row T-13 "(b)"
-case_run T-14 t14 t14_uac.xml t14_uas.xml; row T-14 ""
-case_run T-16 t16cancel t16cancel_uac.xml t16cancel_uas.xml; row T-16 "CANCEL"
-case_run T-16 t16_486 t16_486_uac.xml t16_486_uas.xml; row T-16 "486"
-case_run T-16 t16_603 t16_603_uac.xml t16_603_uas.xml; row T-16 "603"
-case_run T-16 t16to1 t16to1_uac.xml t16to1_uas.xml; row T-16 "timeout 1"
-LO_UAC_TIMEOUT=200 case_run T-16 t16to2 t16to2_uac.xml t16to2_uas.xml; row T-16 "timeout 2"
-case_run T-17 t17 t17_uac.xml t17_uas.xml; row T-17 ""
-case_run T-18 t18 t18_uac.xml t18_uas.xml; row T-18 "and T-19"
-record T-19 "$LAST_VERDICT" "same run as T-18 $LAST_DIR"
-case_run T-20 t20_488u t20_488u_uac.xml t20_488u_uas.xml; row T-20 "488 UAC offer"
-case_run T-20 t20_488s t20_488s_uac.xml t20_488s_uas.xml; row T-20 "488 UAS offer"
-case_run T-20 t20cancel t20cancel_uac.xml t20cancel_uas.xml; row T-20 "CANCEL"
-case_run T-20 t20g1 t20g1_uac.xml t20g1_uas.xml; row T-20 "glare 1"
-case_run T-20 t20g2 t20g2_uac.xml t20g2_uas.xml; row T-20 "glare 2"
-for c in t21a t21b; do
-  case_run T-21 "$c" "${c}_uac.xml" t21_uas.xml
-  python3 -I "$here/rtp_pts.py" "$LAST_DIR/capture.pcap" > "$LAST_DIR/rtp_pts.txt"
-  toward_uas="$(awk '$3 ~ /:6000$/ && $4 != "pt=" && $4 != "pt=0" {print $4 $5}' "$LAST_DIR/rtp_pts.txt" | tr '\n' ' ')"
-  LAST_NOTE="$LAST_NOTE toward_uas_events='$toward_uas'"
-  if [ "$c" = t21a ]; then [ -z "$toward_uas" ] || LAST_VERDICT=FAIL; else [ "$toward_uas" = "pt=101packets=10 " ] || LAST_VERDICT=FAIL; fi
-  row T-21 "$c"
-done
-case_run T-22 t22 t22_uac.xml t22_uas.xml; row T-22 ""
-case_run T-23 t23_401 t23_401_uac.xml t23_401_uas.xml; row T-23 "401"
-case_run T-23 t23_422 t23_422_uac.xml t23_422_uas.xml; row T-23 "422"
-LO_STOP_RTPENGINE_AT=1.2 case_run T-24 t24 t24_uac.xml t24_uas.xml; row T-24 ""
-LO_STOP_RTPENGINE_AT=1.2 case_run T-25 t25 t25_uac.xml t25_uas.xml; row T-25 ""
-LO_STOP_RTPENGINE_AT=1.2 case_run T-26 t26 t26_uac.xml t26_uas.xml; row T-26 ""
-case_run T-27 t27 t27_uac.xml t27_uas.xml; zero_ng; row T-27 ""
-case_run T-28 t28 t28_uac.xml t28_uas.xml; zero_ng; row T-28 ""
-LO_STOP_RTPENGINE_AT=0 LO_UAS_ARGS="-timeout 25" case_run T-29 t29 t29_uac.xml t29_uas.xml udp 97; nothing_at_uas; row T-29 ""
-case_run T-30 t30 t30_uac.xml t30_uas.xml; row T-30 ""
-case_run T-31 t31 t31_uac.xml t31_uas.xml; row T-31 ""
-case_run T-32 t32 t32_uac.xml t32_uas.xml; row T-32 ""
+derived() {
+  local row_id="$1" what="$2" verdict=PASS c
+  shift 2
+  for c in "$@"; do
+    [ "${CASE_VERDICT[$c]:-FAIL}" = PASS ] || verdict=FAIL
+    grep -q "^PASS $what" "$(latest "$c")/row_checks.txt" || verdict=FAIL
+  done
+  record "$row_id" "$verdict" "DERIVED '$what' on the artifacts of: $*"
+}
 
-echo "cases: pass=$pass fail=$fail" | tee -a "$summary"
+declare -A CASE_VERDICT
+
+case_run t01udp uac_late_offer.xml uas_answer.xml udp; row T-01 "udp"
+case_run t01tcp uac_late_offer.xml uas_answer.xml tcp; row T-01 "tcp"
+case_run t02a t02a_uac.xml uas_answer.xml; row T-02 "(a)"
+case_run t02b t02b_uac.xml uas_answer.xml; row T-02 "(b)"
+LO_CALLS=2 LO_UAC_ARGS="-l 1" case_run t03seq uac_late_offer.xml uas_answer.xml; row T-03 "in a row"
+LO_CALLS=2 LO_UAC_ARGS="-r 20 -rp 1000" case_run t03same uac_late_offer.xml uas_answer.xml; row T-03 "same second"
+case_run t04a uac_late_offer.xml uas_answer.xml; row T-04 "BYE from UAC"
+case_run t04b t04b_uac.xml t04b_uas.xml; row T-04 "BYE from UAS"
+case_run t05 t05_uac.xml t05_uas.xml; row T-05 "OPTIONS"
+case_run t06 uac_late_offer.xml uas_answer.xml; row T-06 "S3/S4 NG"
+case_run t07 t07_uac.xml t07_uas.xml; row T-07 ""
+case_run t07r t07r_uac.xml t07r_uas.xml; row T-07 "(r)"
+case_run t09r1 t09r1_uac.xml t09r1_uas.xml; row T-09 "run 1"
+case_run t09r2 t09r2_uac.xml t09r2_uas.xml; row T-09 "run 2"
+case_run t10r1 t10r1_uac.xml t10r1_uas.xml; row T-10 "run 1"
+case_run t10r2 t10r2_uac.xml t10r2_uas.xml; row T-10 "run 2"
+derived T-08 "S7 ACK relayed with RTPEngine's body" t09r1 t09r2 t10r1 t10r2
+case_run t11_488 t11_488_uac.xml t11_488_uas.xml; row T-11 "488"
+case_run t11_491 t11_491_uac.xml t11_491_uas.xml; row T-11 "491"
+case_run t11_retr t11_retr_uac.xml t11_retr_uas.xml; row T-11 "retransmission"
+LO_STOP_RTPENGINE_AT=1 case_run t11_down t11_down_uac.xml t11_down_uas.xml; row T-11 "RTPEngine down"
+LO_STOP_RTPENGINE_AT=3 case_run t11_downack t11_downack_uac.xml t11_downack_uas.xml; row T-11 "RTPEngine down before ACK"
+case_run t12 t12_uac.xml t12_uas.xml; row T-12 ""
+case_run t13a t13a_uac.xml t13a_uas.xml; row T-13 "(a)"
+LO_UAS_ARGS="-timeout 6" case_run t13b t13b_uac.xml t13b_uas.xml udp 97; row T-13 "(b)"
+case_run t14 t14_uac.xml t14_uas.xml; row T-14 ""
+case_run t16cancel t16cancel_uac.xml t16cancel_uas.xml; row T-16 "CANCEL"
+case_run t16_486 t16_486_uac.xml t16_486_uas.xml; row T-16 "486"
+case_run t16_603 t16_603_uac.xml t16_603_uas.xml; row T-16 "603"
+case_run t16to1 t16to1_uac.xml t16to1_uas.xml; row T-16 "timeout 1"
+LO_UAC_TIMEOUT=200 case_run t16to2 t16to2_uac.xml t16to2_uas.xml; row T-16 "timeout 2"
+case_run t17 t17_uac.xml t17_uas.xml; row T-17 ""
+case_run t18 t18_uac.xml t18_uas.xml; row T-18 ""
+derived T-19 "T-19 versions" t18
+case_run t20_488u t20_488u_uac.xml t20_488u_uas.xml; row T-20 "488 UAC offer"
+case_run t20_488s t20_488s_uac.xml t20_488s_uas.xml; row T-20 "488 UAS offer"
+case_run t20cancel t20cancel_uac.xml t20cancel_uas.xml; row T-20 "CANCEL"
+case_run t20g1 t20g1_uac.xml t20g1_uas.xml; row T-20 "glare 1"
+case_run t20g2 t20g2_uac.xml t20g2_uas.xml; row T-20 "glare 2"
+case_run t21a t21a_uac.xml t21_uas.xml; row T-21 "(a)"
+case_run t21b t21b_uac.xml t21_uas.xml; row T-21 "(b)"
+case_run t22a t22_uac.xml t22_uas.xml; row T-22 "(a) PBX-side leg"
+case_run t22b t22b_uac.xml t22b_uas.xml; row T-22 "(b) Karoo-side leg"
+case_run t23_401 t23_401_uac.xml t23_401_uas.xml; row T-23 "401"
+case_run t23_422 t23_422_uac.xml t23_422_uas.xml; row T-23 "422"
+LO_STOP_RTPENGINE_AT=1.2 case_run t24 t24_uac.xml t24_uas.xml; row T-24 ""
+LO_STOP_RTPENGINE_AT=1.2 case_run t25 t25_uac.xml t25_uas.xml; row T-25 ""
+LO_STOP_RTPENGINE_AT=1.2 case_run t26 t26_uac.xml t26_uas.xml; row T-26 ""
+case_run t27 t27_uac.xml t27_uas.xml; row T-27 ""
+case_run t28 t28_uac.xml t28_uas.xml; row T-28 ""
+LO_STOP_RTPENGINE_AT=0 LO_UAS_ARGS="-timeout 25" case_run t29 t29_uac.xml t29_uas.xml udp 97; row T-29 "(a) RTPEngine down"
+LO_BLOCK_HOP_TO_UAS=1 LO_UAS_ARGS="-timeout 25" case_run t29b t29_uac.xml t29_uas.xml udp 97; row T-29 "(b) send failure"
+case_run t30 t30_uac.xml t30_uas.xml; row T-30 ""
+case_run t31 t31_uac.xml t31_uas.xml; row T-31 ""
+case_run t32 t32_uac.xml t32_uas.xml; row T-32 ""
+
+rows_total="$(awk '$1 ~ /^T-/ {print $1}' "$summary" | sort -u | wc -l)"
+rows_failed="$(awk '$1 ~ /^T-/ && $2 == "FAIL" {print $1}' "$summary" | sort -u | wc -l)"
+echo "entries: pass=$pass fail=$fail; rows: $((rows_total - rows_failed)) of $rows_total pass" | tee -a "$summary"
