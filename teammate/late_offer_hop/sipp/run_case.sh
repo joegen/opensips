@@ -16,6 +16,7 @@ transport="${4:-udp}"
 here="$(cd "$(dirname "$0")" && pwd)"
 hop_dir="$(cd "$here/../opensips" && pwd)"
 opensips=/opt/opensips-4.0.2/sbin/opensips
+sipp="${LO_SIPP:-/usr/local/bin/sipp_lo}"
 deploy=/opt/late_offer_hop/opensips
 media_ip=192.168.1.19
 hop_port=5080
@@ -63,7 +64,7 @@ start_ts="$(date "+%Y-%m-%d %H:%M:%S")"
 echo $! > "$out/../opensips.pid"
 sleep 1
 
-sipp -sf "$uas_xml" -i "$media_ip" -p "$uas_port" -mi "$media_ip" -mp 6000 \
+"$sipp" -sf "$uas_xml" -i "$media_ip" -p "$uas_port" -mi "$media_ip" -mp 6000 \
   -t "$sipp_t" -m "${LO_CALLS:-1}" ${LO_UAS_ARGS:-} -trace_msg -message_file "$out/uas_messages.log" \
   -trace_err -error_file "$out/uas_errors.log" -trace_logs -log_file "$out/uas_logs.log" -nostdin > "$out/uas_stdout.log" 2>&1 &
 uas_pid=$!
@@ -73,7 +74,7 @@ if [ -n "${LO_STOP_RTPENGINE_AT:-}" ]; then
   (sleep "$LO_STOP_RTPENGINE_AT"; docker stop -t 0 rtpengine-lo > /dev/null; date +%s.%N > "$out/rtpengine_stopped_at") &
 fi
 set +e
-sipp -sf "$uac_xml" "$media_ip:$hop_port" -i "$uac_sip_ip" -p 5070 -mi "$media_ip" -mp 6050 \
+"$sipp" -sf "$uac_xml" "$media_ip:$hop_port" -i "$uac_sip_ip" -p 5070 -mi "$media_ip" -mp 6050 \
   -t "$sipp_t" -s late -m "${LO_CALLS:-1}" ${LO_UAC_ARGS:-} -timeout "${LO_UAC_TIMEOUT:-60}" -trace_msg -message_file "$out/uac_messages.log" \
   -trace_err -error_file "$out/uac_errors.log" -trace_logs -log_file "$out/uac_logs.log" -nostdin > "$out/uac_stdout.log" 2>&1
 uac_rc=$?
