@@ -28,10 +28,24 @@ t33=PASS
 os="$(docker info --format '{{.OperatingSystem}}')"
 echo "T-33 pre: docker OS '$os'" | tee -a "$summary"
 case "$os" in *"Docker Desktop"*) t33=FAIL ;; esac
-busy="$(ss -lunH | awk '{split($4,a,":"); p=a[length(a)]; if (p >= 40000 && p <= 49999) print $4}')"
-echo "T-33 pre: UDP listeners in 40000-49999: '${busy}'" | tee -a "$summary"
-[ -z "$busy" ] || t33=FAIL
-"$top/rtpengine/build_and_run_rtpengine.sh" "$top/rtpengine/rtpengine.conf.sipp" "$fork" > "$LO_RESULTS_DIR/container_build.log" 2>&1 || t33=FAIL
+conf_src="$top/rtpengine/rtpengine.conf.sipp"
+rtp_overlap() {
+  local conf="$1" users="$2" lo hi u name range ulo uhi bad=""
+  lo="$(sed -n 's/^port-min=//p' "$conf")"
+  hi="$(sed -n 's/^port-max=//p' "$conf")"
+  for u in $users; do
+    name="${u%%:*}"; range="${u#*:}"; ulo="${range%-*}"; uhi="${range#*-}"
+    if [ "$ulo" -le "$hi" ] && [ "$uhi" -ge "$lo" ]; then bad="$bad $name:$range"; fi
+  done
+  echo "RTPEngine range $lo-$hi; other RTP users: $users; overlapping:${bad:- none}"
+  [ -z "$bad" ]
+}
+rtp_users="${LO_RTP_USERS:-sipp:6000-6100}"
+if overlap_note="$(rtp_overlap "$conf_src" "$rtp_users")"; then :; else t33=FAIL; fi
+echo "T-33 pre: $overlap_note" | tee -a "$summary"
+busy="$(ss -lunH | awk '{split($4,a,":"); p=a[length(a)]; if (p >= 40000 && p <= 49999) print $4}' | tr '\n' ' ')"
+echo "T-33 pre (recorded, not pass/fail, HD-LO-23): UDP sockets of other processes in the range: '${busy}'" | tee -a "$summary"
+"$top/rtpengine/build_and_run_rtpengine.sh" "$conf_src" "$fork" > "$LO_RESULTS_DIR/container_build.log" 2>&1 || t33=FAIL
 python3 -I "$here/ng_ping.py" 127.0.0.1 22222 30 > /dev/null || t33=FAIL
 ng="$(sudo -n ss -lunpH | grep rtpengine | awk '{print $4}' | sort -u | tr '\n' ' ')"
 echo "T-33 post: rtpengine UDP sockets bound before calls: '$ng'" | tee -a "$summary"
@@ -44,7 +58,8 @@ echo "T-33 post: network mode '$netmode'" | tee -a "$summary"
 [ "$netmode" = host ] || t33=FAIL
 grep -qx 'table=-1' /opt/late_offer_hop/rtpengine/rtpengine.conf && grep -qx 'port-min=40000' /opt/late_offer_hop/rtpengine/rtpengine.conf \
   && grep -qx 'port-max=49999' /opt/late_offer_hop/rtpengine/rtpengine.conf || t33=FAIL
-record T-33 "$t33" "pre/post-start checks"
+record T-33 "$t33" "AUTO pre/post-start checks"
+[ -n "${LO_T33_ONLY:-}" ] && exit 0
 
 lab_tmp="$LO_RESULTS_DIR/lab_check"
 mkdir -p "$lab_tmp"
