@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<!DOCTYPE scenario SYSTEM "sipp.dtd">
+<scenario name="T-16 UAS: never replies">
+  <recv request="INVITE" rrs="true">
+    <action>
+      <ereg regexp="Record-Route:[^\r\n]*" search_in="msg" check_it="true" assign_to="rr_1"/>
+      <log message="INVITE 1 at UAS: [$rr_1]"/>
+    </action>
+  </recv>
+</scenario>

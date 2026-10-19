@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<!DOCTYPE scenario SYSTEM "sipp.dtd">
+<scenario name="T-16 UAS: 180, then CANCEL -> 487">
+  <recv request="INVITE" rrs="true">
+    <action>
+      <ereg regexp=".*" search_in="hdr" header="Via:" check_it="true" assign_to="v"/>
+      <ereg regexp="Record-Route:[^\r\n]*" search_in="msg" check_it="true" assign_to="rr_1"/>
+      <log message="INVITE 1 at UAS: [$rr_1] via [$v]"/>
+    </action>
+  </recv>
+  <send>
+    <![CDATA[
+      SIP/2.0 180 Ringing
+      [last_Via:]
+      [last_From:]
+      [last_To:];tag=[pid]SIPpTag01[call_number]
+      [last_Call-ID:]
+      [last_CSeq:]
+      [last_Record-Route:]
+      Contact: <sip:karoo@[local_ip]:[local_port];transport=[transport]>
+      Content-Length: 0
+
+    ]]>
+  </send>
+  <recv request="CANCEL"/>
+  <send>
+    <![CDATA[
+      SIP/2.0 200 OK
+      [last_Via:]
+      [last_From:]
+      [last_To:]
+      [last_Call-ID:]
+      [last_CSeq:]
+      Content-Length: 0
+
+    ]]>
+  </send>
+  <send>
+    <![CDATA[
+      SIP/2.0 487 Request Terminated
+      Via: [$v]
+      [last_From:]
+      [last_To:];tag=[pid]SIPpTag01[call_number]
+      [last_Call-ID:]
+      CSeq: 1 INVITE
+      Content-Length: 0
+
+    ]]>
+  </send>
+  <recv request="ACK"/>
+</scenario>

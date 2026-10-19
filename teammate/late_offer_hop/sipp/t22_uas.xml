@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<!DOCTYPE scenario SYSTEM "sipp.dtd">
+<scenario name="T-22 UAS (CANCEL after the 200 is answered by the hop, not seen here)">
+  <recv request="INVITE" rrs="true">
+    <action>
+      <ereg regexp="Record-Route:[^\r\n]*" search_in="msg" check_it="true" assign_to="rr_1"/>
+      <log message="INVITE 1 at UAS: [$rr_1]"/>
+    </action>
+  </recv>
+  <send>
+    <![CDATA[
+      SIP/2.0 180 Ringing
+      [last_Via:]
+      [last_From:]
+      [last_To:];tag=[pid]SIPpTag01[call_number]
+      [last_Call-ID:]
+      [last_CSeq:]
+      [last_Record-Route:]
+      Contact: <sip:karoo@[local_ip]:[local_port];transport=[transport]>
+      Content-Length: 0
+
+    ]]>
+  </send>
+  <send retrans="500">
+    <![CDATA[
+      SIP/2.0 200 OK
+      [last_Via:]
+      [last_From:]
+      [last_To:];tag=[pid]SIPpTag01[call_number]
+      [last_Call-ID:]
+      [last_CSeq:]
+      [last_Record-Route:]
+      Contact: <sip:karoo@[local_ip]:[local_port];transport=[transport]>
+      Content-Type: application/sdp
+      Content-Length: [len]
+
+      v=0
+      o=mediant 2001 1 IN IP4 [media_ip]
+      s=-
+      c=IN IP4 [media_ip]
+      t=0 0
+      m=audio [rtpstream_audio_port] RTP/AVP 0 101
+      a=rtpmap:0 PCMU/8000
+      a=rtpmap:101 telephone-event/8000
+      a=fmtp:101 0-15
+      a=sendrecv
+
+    ]]>
+  </send>
+  <recv request="ACK">
+    <action>
+      <ereg regexp="Content-Length: *[0-9]+" search_in="msg" check_it="true" assign_to="cl"/>
+      <log message="ACK at UAS [$cl]"/>
+    </action>
+  </recv>
+  <recv request="BYE"/>
+  <send>
+    <![CDATA[
+      SIP/2.0 200 OK
+      [last_Via:]
+      [last_From:]
+      [last_To:]
+      [last_Call-ID:]
+      [last_CSeq:]
+      Content-Length: 0
+
+    ]]>
+  </send>
+</scenario>
