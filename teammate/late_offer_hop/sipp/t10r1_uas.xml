@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<!DOCTYPE scenario SYSTEM "sipp.dtd">
+<scenario name="T-10 run 1 UAS: sends a body-less re-INVITE, answers the 200 offer in its ACK on moved port 6097">
+  <recv request="INVITE" rrs="true">
+    <action>
+      <ereg regexp="m=audio [0-9]+ RTP/AVP [0-9 ]+" search_in="body" check_it="true" assign_to="inv_m"/>
+      <log message="INVITE offer [$inv_m]"/>
+      <ereg regexp=";tag=([^;>]+)" search_in="hdr" header="From:" check_it="true" assign_to="ftag_all,pbx_tag"/>
+      <log message="PBX tag [$pbx_tag] [$ftag_all]"/>
+    </action>
+  </recv>
+  <send>
+    <![CDATA[
+      SIP/2.0 180 Ringing
+      [last_Via:]
+      [last_From:]
+      [last_To:];tag=[pid]SIPpTag01[call_number]
+      [last_Call-ID:]
+      [last_CSeq:]
+      [last_Record-Route:]
+      Contact: <sip:karoo@[local_ip]:[local_port];transport=[transport]>
+      Content-Length: 0
+
+    ]]>
+  </send>
+  <send retrans="500">
+    <![CDATA[
+      SIP/2.0 200 OK
+      [last_Via:]
+      [last_From:]
+      [last_To:];tag=[pid]SIPpTag01[call_number]
+      [last_Call-ID:]
+      [last_CSeq:]
+      [last_Record-Route:]
+      Contact: <sip:karoo@[local_ip]:[local_port];transport=[transport]>
+      Content-Type: application/sdp
+      Content-Length: [len]
+
+      v=0
+      o=mediant 2001 1 IN IP4 [media_ip]
+      s=-
+      c=IN IP4 [media_ip]
+      t=0 0
+      m=audio [rtpstream_audio_port] RTP/AVP 0 101
+      a=rtpmap:0 PCMU/8000
+      a=rtpmap:101 telephone-event/8000
+      a=fmtp:101 0-15
+      a=sendrecv
+
+    ]]>
+  </send>
+  <recv request="ACK" crlf="true"/>
+  <nop>
+    <action>
+      <exec rtp_stream="tone_pcmu.wav,-1,0"/>
+    </action>
+  </nop>
+  <pause milliseconds="2000"/>
+  <send retrans="500">
+    <![CDATA[
+      INVITE [next_url] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      [routes]
+      From: <sip:late@[local_ip]:[local_port]>;tag=[pid]SIPpTag01[call_number]
+      To: "pbx" <sip:pbx@[remote_ip]>;tag=[$pbx_tag]
+      Call-ID: [call_id]
+      CSeq: 1 INVITE
+      Contact: <sip:karoo@[local_ip]:[local_port];transport=[transport]>
+      Max-Forwards: 70
+      Content-Length: 0
+
+    ]]>
+  </send>
+  <recv response="100" optional="true"/>
+  <recv response="200">
+    <action>
+      <ereg regexp="m=audio [0-9]+ RTP/AVP [0-9 ]+" search_in="body" check_it="true" assign_to="reinv_offer"/>
+      <log message="200 offer at UAS [$reinv_offer]"/>
+    </action>
+  </recv>
+  <send>
+    <![CDATA[
+      ACK [next_url] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      [routes]
+      From: <sip:late@[local_ip]:[local_port]>;tag=[pid]SIPpTag01[call_number]
+      To: "pbx" <sip:pbx@[remote_ip]>;tag=[$pbx_tag]
+      Call-ID: [call_id]
+      CSeq: 1 ACK
+      Contact: <sip:karoo@[local_ip]:[local_port];transport=[transport]>
+      Max-Forwards: 70
+      Content-Type: application/sdp
+      Content-Length: [len]
+
+      v=0
+      o=mediant 2001 2 IN IP4 [media_ip]
+      s=-
+      c=IN IP4 [media_ip]
+      t=0 0
+      m=audio 6097 RTP/AVP 0 101
+      a=rtpmap:0 PCMU/8000
+      a=rtpmap:101 telephone-event/8000
+      a=fmtp:101 0-15
+      a=sendrecv
+
+    ]]>
+  </send>
+  <recv request="BYE"/>
+  <send>
+    <![CDATA[
+      SIP/2.0 200 OK
+      [last_Via:]
+      [last_From:]
+      [last_To:]
+      [last_Call-ID:]
+      [last_CSeq:]
+      Content-Length: 0
+
+    ]]>
+  </send>
+</scenario>
