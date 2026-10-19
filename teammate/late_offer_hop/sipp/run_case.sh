@@ -74,7 +74,7 @@ if [ -n "${LO_STOP_RTPENGINE_AT:-}" ]; then
 fi
 set +e
 sipp -sf "$uac_xml" "$media_ip:$hop_port" -i "$uac_sip_ip" -p 5070 -mi "$media_ip" -mp 6050 \
-  -t "$sipp_t" -s late -m "${LO_CALLS:-1}" ${LO_UAC_ARGS:-} -timeout 60 -trace_msg -message_file "$out/uac_messages.log" \
+  -t "$sipp_t" -s late -m "${LO_CALLS:-1}" ${LO_UAC_ARGS:-} -timeout "${LO_UAC_TIMEOUT:-60}" -trace_msg -message_file "$out/uac_messages.log" \
   -trace_err -error_file "$out/uac_errors.log" -trace_logs -log_file "$out/uac_logs.log" -nostdin > "$out/uac_stdout.log" 2>&1
 uac_rc=$?
 wait "$uas_pid"
