@@ -64,7 +64,7 @@ echo $! > "$out/../opensips.pid"
 sleep 1
 
 sipp -sf "$uas_xml" -i "$media_ip" -p "$uas_port" -mi "$media_ip" -mp 6000 \
-  -t "$sipp_t" -m "${LO_CALLS:-1}" -trace_msg -message_file "$out/uas_messages.log" \
+  -t "$sipp_t" -m "${LO_CALLS:-1}" ${LO_UAS_ARGS:-} -trace_msg -message_file "$out/uas_messages.log" \
   -trace_err -error_file "$out/uas_errors.log" -trace_logs -log_file "$out/uas_logs.log" -nostdin > "$out/uas_stdout.log" 2>&1 &
 uas_pid=$!
 sleep 0.5
