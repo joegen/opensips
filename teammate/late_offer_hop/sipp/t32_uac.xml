@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<!DOCTYPE scenario SYSTEM "sipp.dtd">
+<scenario name="T-32 UAC: UPDATE with SDP, answers a UAS UPDATE with SDP, then body-less UPDATEs both ways">
+  <send retrans="500">
+    <![CDATA[
+      INVITE sip:[service]@[remote_ip]:[remote_port] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      From: "pbx" <sip:pbx@[local_ip]:[local_port]>;tag=[pid]SIPpTag00[call_number]
+      To: <sip:[service]@[remote_ip]:[remote_port]>
+      Call-ID: [call_id]
+      CSeq: 1 INVITE
+      Contact: <sip:pbx@[local_ip]:[local_port];transport=[transport]>
+      Max-Forwards: 70
+      Supported: replaces, timer
+      Allow: INVITE, ACK, CANCEL, BYE, UPDATE, OPTIONS
+      Content-Length: 0
+
+    ]]>
+  </send>
+  <recv response="100" optional="true"/>
+  <recv response="180" optional="true"/>
+  <recv response="183" optional="true"/>
+  <recv response="200" rrs="true">
+    <action>
+      <ereg regexp="o=[^\r\n]+" search_in="body" check_it="true" assign_to="o_1"/>
+      <ereg regexp="m=audio [0-9]+ RTP/AVP [0-9 ]+" search_in="body" check_it="true" assign_to="m_1"/>
+      <log message="200 offer at UAC [$o_1] [$m_1]"/>
+    </action>
+  </recv>
+  <send>
+    <![CDATA[
+      ACK [next_url] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      [routes]
+      From: "pbx" <sip:pbx@[local_ip]:[local_port]>;tag=[pid]SIPpTag00[call_number]
+      To: <sip:[service]@[remote_ip]:[remote_port]>[peer_tag_param]
+      Call-ID: [call_id]
+      CSeq: 1 ACK
+      Contact: <sip:pbx@[local_ip]:[local_port];transport=[transport]>
+      Max-Forwards: 70
+      Content-Type: application/sdp
+      Content-Length: [len]
+
+      v=0
+      o=pbx 1001 1 IN IP4 [media_ip]
+      s=-
+      c=IN IP4 [media_ip]
+      t=0 0
+      m=audio [rtpstream_audio_port] RTP/AVP 0 101
+      a=rtpmap:0 PCMU/8000
+      a=rtpmap:101 telephone-event/8000
+      a=fmtp:101 0-15
+      a=sendrecv
+
+    ]]>
+  </send>
+  <nop>
+    <action>
+      <exec rtp_stream="tone_pcmu.wav,-1,0"/>
+    </action>
+  </nop>
+  <pause milliseconds="2000"/>
+  <send retrans="500">
+    <![CDATA[
+      UPDATE [next_url] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      [routes]
+      From: "pbx" <sip:pbx@[local_ip]:[local_port]>;tag=[pid]SIPpTag00[call_number]
+      To: <sip:[service]@[remote_ip]:[remote_port]>[peer_tag_param]
+      Call-ID: [call_id]
+      CSeq: 2 UPDATE
+      Contact: <sip:pbx@[local_ip]:[local_port];transport=[transport]>
+      Max-Forwards: 70
+      Content-Type: application/sdp
+      Content-Length: [len]
+
+      v=0
+      o=pbx 1001 2 IN IP4 [media_ip]
+      s=-
+      c=IN IP4 [media_ip]
+      t=0 0
+      m=audio [rtpstream_audio_port] RTP/AVP 0 8 101
+      a=rtpmap:0 PCMU/8000
+      a=rtpmap:8 PCMA/8000
+      a=rtpmap:101 telephone-event/8000
+      a=fmtp:101 0-15
+      a=sendrecv
+
+    ]]>
+  </send>
+  <recv response="200">
+    <action>
+      <ereg regexp="o=[^\r\n]+" search_in="body" check_it="true" assign_to="a1_o"/>
+      <ereg regexp="m=audio [0-9]+ RTP/AVP [0-9 ]+" search_in="body" check_it="true" assign_to="a1_m"/>
+      <log message="UPDATE 2 answer at UAC [$a1_o] [$a1_m]"/>
+    </action>
+  </recv>
+  <recv request="UPDATE">
+    <action>
+      <ereg regexp="o=[^\r\n]+" search_in="body" check_it="true" assign_to="u1_o"/>
+      <ereg regexp="m=audio [0-9]+ RTP/AVP [0-9 ]+" search_in="body" check_it="true" assign_to="u1_m"/>
+      <log message="UAS UPDATE offer at UAC [$u1_o] [$u1_m]"/>
+    </action>
+  </recv>
+  <send>
+    <![CDATA[
+      SIP/2.0 200 OK
+      [last_Via:]
+      [last_From:]
+      [last_To:]
+      [last_Call-ID:]
+      [last_CSeq:]
+      Contact: <sip:pbx@[local_ip]:[local_port];transport=[transport]>
+      Content-Type: application/sdp
+      Content-Length: [len]
+
+      v=0
+      o=pbx 1001 3 IN IP4 [media_ip]
+      s=-
+      c=IN IP4 [media_ip]
+      t=0 0
+      m=audio [rtpstream_audio_port] RTP/AVP 0 101
+      a=rtpmap:0 PCMU/8000
+      a=rtpmap:101 telephone-event/8000
+      a=fmtp:101 0-15
+      a=sendrecv
+
+    ]]>
+  </send>
+  <pause milliseconds="1000"/>
+  <send retrans="500">
+    <![CDATA[
+      UPDATE [next_url] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      [routes]
+      From: "pbx" <sip:pbx@[local_ip]:[local_port]>;tag=[pid]SIPpTag00[call_number]
+      To: <sip:[service]@[remote_ip]:[remote_port]>[peer_tag_param]
+      Call-ID: [call_id]
+      CSeq: 3 UPDATE
+      Contact: <sip:pbx@[local_ip]:[local_port];transport=[transport]>
+      Max-Forwards: 70
+      Content-Length: 0
+
+    ]]>
+  </send>
+  <recv response="200">
+    <action>
+      <ereg regexp="v=0" search_in="body" check_it_inverse="true" assign_to="a2_b"/>
+      <log message="UPDATE 3 200 at UAC (body must be empty) [$a2_b]"/>
+    </action>
+  </recv>
+  <recv request="UPDATE">
+    <action>
+      <ereg regexp="v=0" search_in="body" check_it_inverse="true" assign_to="u2_b"/>
+      <log message="UAS body-less UPDATE at UAC (body must be empty) [$u2_b]"/>
+    </action>
+  </recv>
+  <send>
+    <![CDATA[
+      SIP/2.0 200 OK
+      [last_Via:]
+      [last_From:]
+      [last_To:]
+      [last_Call-ID:]
+      [last_CSeq:]
+      Contact: <sip:pbx@[local_ip]:[local_port];transport=[transport]>
+      Content-Length: 0
+
+    ]]>
+  </send>
+  <pause milliseconds="3000"/>
+  <send retrans="500">
+    <![CDATA[
+      BYE [next_url] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      [routes]
+      From: "pbx" <sip:pbx@[local_ip]:[local_port]>;tag=[pid]SIPpTag00[call_number]
+      To: <sip:[service]@[remote_ip]:[remote_port]>[peer_tag_param]
+      Call-ID: [call_id]
+      CSeq: 4 BYE
+      Contact: <sip:pbx@[local_ip]:[local_port];transport=[transport]>
+      Max-Forwards: 70
+      Content-Length: 0
+
+    ]]>
+  </send>
+  <recv response="200" crlf="true"/>
+</scenario>
