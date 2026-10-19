@@ -62,7 +62,7 @@ hop_port_busy() {
 }
 
 hop_port_owned_by_container() {
-  local pids p proto
+  local pids p proto x
   pids=" $(docker top "$hop_container" -eo pid 2>/dev/null | tail -n +2 | tr '\n' ' ') "
   for proto in -lunpH -ltnpH; do
     p="$(sudo -n ss "$proto" "sport = :$hop_port" | grep -o 'pid=[0-9]*' | cut -d= -f2 | sort -u)"
@@ -88,10 +88,13 @@ rtpengine_running() {
 if ! rtpengine_running; then
   docker start rtpengine-lo > /dev/null
 fi
-if [ -n "${LO_RTPENGINE_IMAGE_ID:-}" ] && [ "$(docker inspect -f '{{.Image}}' rtpengine-lo)" != "$LO_RTPENGINE_IMAGE_ID" ]; then
-  echo "rtpengine-lo image $(docker inspect -f '{{.Image}}' rtpengine-lo) is not the recorded $LO_RTPENGINE_IMAGE_ID" > "$out/runner_error.log"
-  echo "uac_rc=99 uas_rc=99 out=$out"
-  exit 1
+if [ -n "${LO_RTPENGINE_IMAGE_ID:-}" ]; then
+  rtpe_img="$(docker inspect -f '{{.Image}}' rtpengine-lo 2>&1)" || true
+  if [ "$rtpe_img" != "$LO_RTPENGINE_IMAGE_ID" ]; then
+    echo "rtpengine-lo image '$rtpe_img' is not the recorded $LO_RTPENGINE_IMAGE_ID" > "$out/runner_error.log"
+    echo "uac_rc=99 uas_rc=99 out=$out"
+    exit 1
+  fi
 fi
 python3 -I "$here/ng_ping.py" 127.0.0.1 22222 30 > /dev/null
 if ! hop_check > "$out/opensips_check.log" 2>&1; then

@@ -20,7 +20,9 @@ latest() {
   ls -d "$LO_RESULTS_DIR/$1"-* | tail -1
 }
 
-echo "fork $(git -C "$fork" rev-parse HEAD)" | tee -a "$summary"
+fork_head="$(git -C "$fork" rev-parse --verify HEAD)" || fork_head=""
+echo "fork ${fork_head:-<git rev-parse failed>}" | tee -a "$summary"
+[ -n "$fork_head" ] || record fork-commit FAIL "git -C $fork rev-parse --verify HEAD failed (C5.publishing step 4 needs the fork commit)"
 cd "$here" || exit 1
 
 docker rm -f rtpengine-lo > /dev/null 2>&1
@@ -47,7 +49,7 @@ busy="$(ss -lunH | awk '{split($4,a,":"); p=a[length(a)]; if (p >= 40000 && p <=
 echo "T-33 pre (recorded, not pass/fail, HD-LO-23): UDP sockets of other processes in the range: '${busy}'" | tee -a "$summary"
 "$top/rtpengine/build_and_run_rtpengine.sh" "$conf_src" "$fork" > "$LO_RESULTS_DIR/container_build.log" 2>&1 || t33=FAIL
 rtpe_id="$(docker inspect -f '{{.Image}}' rtpengine-lo)"
-echo "rtpengine-lo image $rtpe_id (fork $(git -C "$fork" rev-parse HEAD))" | tee -a "$summary"
+echo "rtpengine-lo image $rtpe_id (fork $fork_head)" | tee -a "$summary"
 export LO_RTPENGINE_IMAGE_ID="$rtpe_id"
 python3 -I "$here/ng_ping.py" 127.0.0.1 22222 30 > /dev/null || t33=FAIL
 ng="$(sudo -n ss -lunpH | grep rtpengine | awk '{print $4}' | sort -u | tr '\n' ' ')"
@@ -80,7 +82,7 @@ echo "T-33 control: same check on rtpengine-lo-nnp-ctl (no option): $(cat "$LO_R
 grep -qx 'table=-1' /opt/late_offer_hop/rtpengine/rtpengine.conf && grep -qx 'port-min=40000' /opt/late_offer_hop/rtpengine/rtpengine.conf \
   && grep -qx 'port-max=49999' /opt/late_offer_hop/rtpengine/rtpengine.conf || t33=FAIL
 record T-33 "$t33" "AUTO pre/post-start checks"
-[ -n "${LO_T33_ONLY:-}" ] && exit 0
+if [ -n "${LO_T33_ONLY:-}" ]; then [ "$fail" = 0 ]; exit $?; fi
 
 lab_tmp="$LO_RESULTS_DIR/lab_check"
 mkdir -p "$lab_tmp"
@@ -111,8 +113,12 @@ lab_check() {
     return
   fi
   if ! lab_cfg_check "$copy" "$lab_tmp/$name.check.log"; then
+    if ! grep -q 'failed to initialize list addresses' "$lab_tmp/$name.check.log"; then
+      record "$name" FAIL "'-c' failed for a reason other than a socket address ($note; log $lab_tmp/$name.check.log)"
+      return
+    fi
     copy="$lab_tmp/$name.bed.local.cfg"
-    note="$note; bed address 192.168.1.19 used in place of $priv (not owned by the bed host), alias kept"
+    note="$note; first '-c' refused a socket address (log $lab_tmp/$name.check.log), so bed address 192.168.1.19 is used in place of $priv, alias kept"
     fill_lab "$copy" 192.168.1.19 "$pub" "$port" "$ng"
     if ! lab_cfg_check "$copy" "$lab_tmp/$name.bed.check.log"; then
       record "$name" FAIL "'-c' with the filled .lab copy ($note)"
@@ -132,10 +138,11 @@ if [ -n "${LO_HOP_IMAGE:-}" ]; then
   "$here/t35_rtpengine_image.sh" "$fork" "$rtpe_id" "$LO_RESULTS_DIR/t35" > /dev/null || t35=FAIL
   record T-35 "$t35" "AUTO hop image $(docker image inspect -f '{{.Id}}' "$LO_HOP_IMAGE") build $LO_HOP_BUILD_COMMIT; rtpengine image $rtpe_id; items in $LO_RESULTS_DIR/t35; .lab part = cfg-lab-pair1/2"
   out="$(LO_LOCAL_UNREADABLE=1 ./run_case.sh image-start-unreadable uac_late_offer.xml uas_answer.xml 2>&1 | tail -1)"
-  if grep -q 'uac_rc=99' <<< "$out" && grep -q 'did not start' "$(latest image-start-unreadable)/runner_error.log"; then
-    record image-start-unreadable PASS "a case started with an unreadable local file FAILS at the start check ($out)"
+  if grep -q 'uac_rc=99' <<< "$out" && grep -q 'did not start' "$(latest image-start-unreadable)/runner_error.log" \
+    && grep -q 'Permission denied' "$(latest image-start-unreadable)/opensips_stdout.log"; then
+    record image-start-unreadable PASS "a case started with an unreadable local file FAILS at the start check, hop log 'Permission denied' ($out)"
   else
-    record image-start-unreadable FAIL "a case started with an unreadable local file did not FAIL at the start check ($out)"
+    record image-start-unreadable FAIL "a case started with an unreadable local file did not FAIL at the start check with 'Permission denied' in the hop log ($out)"
   fi
 fi
 
@@ -176,6 +183,17 @@ derived() {
 
 declare -A CASE_VERDICT
 
+uac_default="$(sed -n 's/^uac_sip_ip="${LO_UAC_SIP_IP:-\(.*\)}"$/\1/p' run_case.sh)"
+uac_ip="${LO_UAC_SIP_IP:-$uac_default}"
+karoo_private="$(sed -n 's/.*lo_karoo_private_ip) = "\(.*\)";/\1/p' "$top/opensips/late_offer_hop.local.cfg.sipp")"
+karoo_public="$(sed -n 's/.*lo_karoo_public_ip) = "\(.*\)";/\1/p' "$top/opensips/late_offer_hop.local.cfg.sipp")"
+if [ -n "$uac_ip" ] && [ -n "$karoo_private" ] && [ -n "$karoo_public" ] && [ "$uac_ip" != "$karoo_private" ] && [ "$uac_ip" != "$karoo_public" ]; then
+  record t38-precondition PASS "UAC -i $uac_ip differs from lo_karoo_private_ip $karoo_private and lo_karoo_public_ip $karoo_public"
+else
+  record t38-precondition FAIL "UAC -i '$uac_ip', lo_karoo_private_ip '$karoo_private', lo_karoo_public_ip '$karoo_public'"
+  echo "stopped before the first case: t38-precondition FAIL" | tee -a "$summary"
+  exit 1
+fi
 case_run t01udp uac_late_offer.xml uas_answer.xml udp; row T-01 "udp"
 case_run t01tcp uac_late_offer.xml uas_answer.xml tcp; row T-01 "tcp"
 case_run t02a t02a_uac.xml uas_answer.xml; row T-02 "(a)"
@@ -232,14 +250,6 @@ case_run t30 t30_uac.xml t30_uas.xml; row T-30 ""
 case_run t31 t31_uac.xml t31_uas.xml; row T-31 ""
 case_run t32 t32_uac.xml t32_uas.xml; row T-32 ""
 
-uac_ip="$(sed -n 's/^uac_sip_ip="${LO_UAC_SIP_IP:-\(.*\)}"$/\1/p' run_case.sh)"
-karoo_private="$(sed -n 's/.*lo_karoo_private_ip) = "\(.*\)";/\1/p' "$top/opensips/late_offer_hop.local.cfg.sipp")"
-karoo_public="$(sed -n 's/.*lo_karoo_public_ip) = "\(.*\)";/\1/p' "$top/opensips/late_offer_hop.local.cfg.sipp")"
-if [ -n "$uac_ip" ] && [ -n "$karoo_private" ] && [ -n "$karoo_public" ] && [ "$uac_ip" != "$karoo_private" ] && [ "$uac_ip" != "$karoo_public" ]; then
-  record t38-precondition PASS "UAC -i $uac_ip differs from lo_karoo_private_ip $karoo_private and lo_karoo_public_ip $karoo_public"
-else
-  record t38-precondition FAIL "UAC -i '$uac_ip', lo_karoo_private_ip '$karoo_private', lo_karoo_public_ip '$karoo_public'"
-fi
 LO_UAC_SIP_IP="$karoo_private" LO_UAS_ARGS="-timeout 6" case_run t38priv t38_uac.xml t13b_uas.xml udp 97; row T-38 "UDP from lo_karoo_private_ip"
 LO_UAC_SIP_IP="$karoo_public" LO_UAS_ARGS="-timeout 6" case_run t38pub t38_uac.xml t13b_uas.xml udp 97; row T-38 "UDP from lo_karoo_public_ip"
 LO_UAC_SIP_IP="$karoo_private" LO_UAS_ARGS="-timeout 6" case_run t38tcp t38tcp_uac.xml t13b_uas.xml tcp 97; row T-38 "TCP from lo_karoo_private_ip"

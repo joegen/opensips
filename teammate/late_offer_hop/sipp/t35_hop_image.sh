@@ -29,18 +29,22 @@ control() {
 
 image_id="$(docker image inspect -f '{{.Id}}' "$image")" || { note "T-35 FAIL image '$image' not found"; exit 1; }
 note "T-35 image $image id $image_id"
-note "T-35 build commit $commit tree $(git -C "$repo" rev-parse "$commit^{tree}")"
+if tree="$(git -C "$repo" rev-parse --verify "$commit^{tree}" 2>&1)"; then r=PASS; else r=FAIL; fi
+item "build commit" "$r" "$commit tree $tree"
 
 version="$(docker run --rm --entrypoint /opt/opensips-4.0.2/sbin/opensips "$image" -V 2>&1)"
 echo "$version" > "$out/t35_version.txt"
-if grep -q '^version: opensips 4\.0\.2 ' <<< "$version"; then item "(1)" PASS "-V: $(head -1 <<< "$version")"; else item "(1)" FAIL "-V: $(head -1 <<< "$version")"; fi
+if grep -q '^version: opensips 4\.0\.2 ' <<< "$version"; then r=PASS; else r=FAIL; fi
+item "(1)" "$r" "-V: $(head -1 <<< "$version")"
 
+docker run --rm --entrypoint cat "$image" "$baked" > "$out/baked_late_offer_hop.cfg"
+baked_rc=$?
 baked_same() {
-  docker run --rm --entrypoint cat "$image" "$baked" | cmp -s - "$1"
+  cmp -s "$out/baked_late_offer_hop.cfg" "$1"
 }
 mode="$(docker run --rm --entrypoint stat "$image" -c '%a' "$baked" 2>&1)"
-if baked_same "$top/opensips/late_offer_hop.cfg" && [ "$mode" = 644 ]; then r=PASS; else r=FAIL; fi
-item "(2)" "$r" "baked $baked byte-identical to the worktree's late_offer_hop.cfg, read as the image user; mode '$mode'"
+if [ "$baked_rc" = 0 ] && baked_same "$top/opensips/late_offer_hop.cfg" && [ "$mode" = 644 ]; then r=PASS; else r=FAIL; fi
+item "(2)" "$r" "baked $baked byte-identical to the worktree's late_offer_hop.cfg, read as the image user (cat exit $baked_rc); mode '$mode'"
 changed="$out/late_offer_hop.cfg.changed"
 cp "$top/opensips/late_offer_hop.cfg" "$changed"
 printf 'X' | dd of="$changed" bs=1 seek=0 conv=notrunc status=none
@@ -65,7 +69,9 @@ inspect_ok() {
 }
 if fields="$(inspect_ok "$image")"; then r=PASS; else r=FAIL; fi
 item "(4)" "$r" "$fields"
-item "(4) negative control" "$(control inspect_ok debian:bookworm-slim)" "the same check on debian:bookworm-slim (user root) must FAIL"
+if ctl_fields="$(inspect_ok debian:bookworm-slim 2>&1)"; then ctl_rc=0; else ctl_rc=1; fi
+if docker image inspect debian:bookworm-slim > /dev/null 2>&1 && [ "$ctl_rc" != 0 ] && grep -Eq '^User=(root)? ' <<< "$ctl_fields"; then r=PASS; else r=FAIL; fi
+item "(4) negative control" "$r" "debian:bookworm-slim (must exist locally; user root or empty) must FAIL on User: $ctl_fields"
 
 key_find='find /opt \( -name "*.pem" -o -name "*.key" -o -name "id_*" \) -print'
 copies="$(grep -E '^COPY' "$top/docker/opensips_rtp_engine/Dockerfile" | grep -vE '^COPY (\. /usr/src/opensips|--from=build /opt/opensips-4\.0\.2/(sbin|lib) |--chmod=0644 teammate/late_offer_hop/opensips/late_offer_hop\.cfg )')"
