@@ -1,0 +1,7 @@
+[rtpengine]
+interface=<MEDIA_IP>
+listen-ng=127.0.0.1:22222
+port-min=40000
+port-max=49999
+table=-1
+log-level=6

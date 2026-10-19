@@ -1,0 +1,6 @@
+socket=udp:192.168.1.19:5080
+socket=tcp:192.168.1.19:5080
+
+route[lo_local_settings] {
+  $var(lo_karoo_uri) = "sip:192.168.1.19:5060";
+}
