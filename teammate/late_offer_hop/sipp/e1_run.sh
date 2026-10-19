@@ -263,27 +263,36 @@ LO_UAC_SIP_IP="$karoo_public" LO_UAS_ARGS="-timeout 6" case_run t38pub t38_uac.x
 LO_UAC_SIP_IP="$karoo_private" LO_UAS_ARGS="-timeout 6" case_run t38tcp t38tcp_uac.xml t13b_uas.xml tcp 97; row T-38 "TCP from lo_karoo_private_ip"
 
 negative_control() {
-  local name="$1" check="$2" dir="$3"
-  if python3 -I "$here/row_checks.py" "$check" "$dir" > "$LO_RESULTS_DIR/$name.txt" 2>&1; then
+  local name="$1" check="$2" dir="$3" out="$LO_RESULTS_DIR/$1.txt" f
+  shift 3
+  if python3 -I "$here/row_checks.py" "$check" "$dir" > "$out" 2>&1; then
     record "$name" FAIL "the $check check PASSED on $dir"
-  else
-    record "$name" PASS "the $check check FAILS on $dir, as required"
+    return
   fi
+  for f in "$@"; do
+    if ! grep '^FAIL ' "$out" | grep -qF -- "$f"; then
+      record "$name" FAIL "the $check check FAILS on $dir, but not on '$f'"
+      return
+    fi
+  done
+  record "$name" PASS "the $check check FAILS on $dir, as required${*:+ (failing: $*)}"
 }
 negative_control t38-negative-control t38priv "$(latest t01udp)"
 
 hop_remote="192.168.1.19:5080"
+alias_ip=203.0.113.10
+alias_remote="$alias_ip:5080"
 LO_UAC_REMOTE="$hop_remote" LO_UAS_ARGS="-timeout 6" case_run t39a t39_uac.xml t13b_uas.xml udp 97; row T-39 "(a) UDP INVITE and OPTIONS naming the hop"
 LO_UAC_REMOTE="$hop_remote" LO_UAS_ARGS="-timeout 6" case_run t39b t39_uac.xml t13b_uas.xml tcp 97; row T-39 "(b) TCP INVITE and OPTIONS naming the hop"
-LO_LOCAL_ALIAS=203.0.113.10 LO_UAC_REMOTE=203.0.113.10:5080 LO_UAS_ARGS="-timeout 6" case_run t39c_udp t39inv_uac.xml t13b_uas.xml udp 97; row T-39 "(c) UDP INVITE naming the alias"
-LO_LOCAL_ALIAS=203.0.113.10 LO_UAC_REMOTE=203.0.113.10:5080 LO_UAS_ARGS="-timeout 6" case_run t39c_tcp t39inv_uac.xml t13b_uas.xml tcp 97; row T-39 "(c) TCP INVITE naming the alias"
-LO_LOCAL_ALIAS=203.0.113.10 LO_UAC_ARGS="-key ruri sip:late@203.0.113.10;user=phone" case_run t39c_rel t39lit_uac.xml uas_answer.xml udp; row T-39 "(c) alias host without port relayed"
+LO_LOCAL_ALIAS="$alias_ip" LO_UAC_REMOTE="$alias_remote" LO_UAS_ARGS="-timeout 6" case_run t39c_udp t39inv_uac.xml t13b_uas.xml udp 97; row T-39 "(c) UDP INVITE naming the alias"
+LO_LOCAL_ALIAS="$alias_ip" LO_UAC_REMOTE="$alias_remote" LO_UAS_ARGS="-timeout 6" case_run t39c_tcp t39inv_uac.xml t13b_uas.xml tcp 97; row T-39 "(c) TCP INVITE naming the alias"
+LO_LOCAL_ALIAS="$alias_ip" LO_UAC_ARGS="-key ruri sip:late@$alias_ip;user=phone" case_run t39c_rel t39lit_uac.xml uas_answer.xml udp; row T-39 "(c) alias host without port relayed"
 LO_UAC_ARGS="-key ruri sip:late@192.168.1.19;user=phone;cause=302" case_run t39d1 t39lit_uac.xml uas_answer.xml udp; row T-39 "(d1) relayed"
 LO_UAC_ARGS="-key ruri sip:late@192.168.1.19;transport=tcp" case_run t39d2 t39lit_uac.xml uas_answer.xml udp; row T-39 "(d2) relayed"
 LO_UAC_ARGS="-key ruri sip:late@192.168.1.19;transport=xyz" case_run t39d3 t39lit_uac.xml uas_answer.xml udp; row T-39 "(d3) relayed"
 LO_UAC_REMOTE="$hop_remote" LO_UAC_SIP_IP="$karoo_private" LO_UAS_ARGS="-timeout 6" case_run t39e t39e_uac.xml t13b_uas.xml udp 97; row T-39 "(e) 482 before 404"
-negative_control t39-negative-control t39a "$(latest t01udp)"
-negative_control t39-relayed-negative-control t39d1 "$(latest t39a)"
+negative_control t39-negative-control t39a "$(latest t01udp)" "capture holds the INVITE to the hop and the hop's 404" "no request with the row's Call-IDs reaches the UAS" "no NG command"
+negative_control t39-relayed-negative-control t39a_relayed "$(latest t39a)" "the UAS receives exactly that Request-URI" "an NG offer is seen" "the hop log holds no 'naming the hop' line"
 noguard="$LO_RESULTS_DIR/late_offer_hop.noguard.cfg"
 sed 's/if (\$rp != 0 \&\& is_myself(\$rd, \$rp)) {/if (is_myself($rd, $rp)) {/' "$top/opensips/late_offer_hop.cfg" > "$noguard"
 if [ "$(diff "$top/opensips/late_offer_hop.cfg" "$noguard" | grep -c '^[<>]')" = 2 ]; then

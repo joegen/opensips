@@ -47,6 +47,10 @@ def received(msgs, start, cseq=None):
     return [m for r, m in msgs if r and first_line(m).startswith(start) and (cseq is None or header(m, "CSeq") == cseq)]
 
 
+def sent(msgs, start):
+    return [m for r, m in msgs if not r and first_line(m).startswith(start)]
+
+
 def sdp_port(msg):
     m = re.search(r"^m=audio (\d+) ", body(msg), re.M)
     return int(m.group(1)) if m else None
@@ -71,11 +75,11 @@ class Case:
         self.d = d
         self.uac = sip_messages(f"{d}/uac_messages.log")
         self.uas = sip_messages(f"{d}/uas_messages.log")
-        sent = [m for r, m in self.uac if not r and first_line(m).startswith("INVITE")]
+        invites = sent(self.uac, "INVITE")
         self.call_ids = sorted({header(m, "Call-ID") for r, m in self.uac if not r and not first_line(m).startswith("SIP/2.0")})
         self.uac_tag = None
-        if sent:
-            m = re.search(r"tag=([^;>\s]+)", header(sent[0], "From") or "")
+        if invites:
+            m = re.search(r"tag=([^;>\s]+)", header(invites[0], "From") or "")
             self.uac_tag = m.group(1) if m else None
         self._ng = None
         self._rtp = None
@@ -125,7 +129,7 @@ class Case:
             self._frames = []
             if self.call_ids:
                 fields = ["sll.pkttype", "ip.src", "udp.srcport", "tcp.srcport", "ip.dst", "udp.dstport", "tcp.dstport", "tcp.stream",
-                          "sip.Method", "sip.Status-Code", "sip.CSeq.method", "sip.Call-ID"]
+                          "sip.Method", "sip.Status-Code", "sip.CSeq.method", "sip.Call-ID", "sip.r-uri", "sip.to.tag"]
                 cmd = ["tshark", "-r", f"{self.d}/capture.pcap", "-o", "tcp.analyze_sequence_numbers:FALSE", "-Y", self.call_id_filter(),
                        "-T", "fields", "-E", "separator=|", "-E", "occurrence=f"]
                 for f in fields:
@@ -136,7 +140,8 @@ class Case:
                     if pkttype != "0":
                         continue
                     self._frames.append({"src": v[0], "sport": int(v[1] or v[2]), "dst": v[3], "dport": int(v[4] or v[5]),
-                                         "stream": v[6], "method": v[7], "status": v[8], "cseq": v[9], "cid": v[10]})
+                                         "stream": v[6], "method": v[7], "status": v[8], "cseq": v[9], "cid": v[10],
+                                         "ruri": v[11], "totag": v[12]})
         return self._frames
 
 
@@ -404,9 +409,9 @@ def t23(c, r):
 
 def t27_28(c, r):
     ng_zero(c, r)
-    sent = [m for rr_, m in c.uac if not rr_ and first_line(m).startswith("INVITE")]
+    invites = sent(c.uac, "INVITE")
     got = received(c.uas, "INVITE", "1 INVITE")
-    chk(r, "INVITE body byte-identical at the UAS", sent and got and body(sent[0]) == body(got[0]))
+    chk(r, "INVITE body byte-identical at the UAS", invites and got and body(invites[0]) == body(got[0]))
 
 
 def event_pts_to_uas(c):
@@ -497,7 +502,9 @@ def rejected(c, r, methods, code):
         chk(r, f"the hop sends no other response to the {m}", all(x["status"] == code for x in resp),
             sorted({x["status"] for x in resp}))
     if "INVITE" in methods:
-        chk(r, f"the ACK of the {code} is in the capture toward the hop", any(x["method"] == "ACK" for x in to_hop))
+        tags = {x["totag"] for x in from_hop if x["status"] == code and x["cseq"] == "INVITE" and x["totag"]}
+        acks = [x for x in to_hop if x["method"] == "ACK" and x["totag"] in tags]
+        chk(r, f"the ACK of the {code} (its To-tag) is in the capture toward the hop", acks, f"{len(acks)} ACK, {code} To-tag {sorted(tags)}")
     chk(r, "no request with the row's Call-IDs reaches the UAS (ACK included)",
         not any(x["dport"] == UAS_SIP_PORT and x["method"] for x in f), [x["method"] for x in f if x["dport"] == UAS_SIP_PORT])
     chk(r, "UAS log holds no message", not c.uas)
@@ -527,34 +534,69 @@ def t38tcp(c, r):
     chk(r, "the deployed TCP variant's lo_karoo_*_ip lines equal the .sipp lines", len(sipp_lines) == 2 and tcp_lines == sipp_lines, tcp_lines)
 
 
-def naming_lines(c):
+def hop_log(c):
     path = f"{c.d}/opensips.log"
-    log = open(path, errors="replace").read() if os.path.exists(path) else ""
-    return [l for l in log.splitlines() if "naming the hop rejected with 404" in l and any(cid in l for cid in c.call_ids)]
+    return open(path, errors="replace").read().splitlines() if os.path.exists(path) else []
+
+
+def naming_lines(c, method=""):
+    return [l for l in hop_log(c) if "naming the hop rejected with 404" in l and f"initial {method}" in l
+            and any(cid in l for cid in c.call_ids)]
 
 
 def t39_rejected(c, r, methods, tcp=False):
     rejected(c, r, methods, "404")
     if tcp:
         same_connection(c, r, "404")
-    chk(r, "the hop log holds the 'naming the hop' line for the Call-ID", naming_lines(c), len(naming_lines(c)))
+    for m in methods:
+        lines = naming_lines(c, m)
+        chk(r, f"the hop log holds the 'naming the hop' line for the {m} with the Call-ID", lines, len(lines))
 
 
 def relayed(c, r, ruri):
-    sent = [first_line(m) for rr_, m in c.uac if not rr_ and first_line(m).startswith("INVITE")]
-    got = [first_line(m) for m in received(c.uas, "INVITE", "1 INVITE")]
-    want = f"INVITE {ruri} SIP/2.0"
-    chk(r, "the UAC sent the literal Request-URI", sent[:1] == [want], sent[:1])
-    chk(r, "the UAS receives exactly that Request-URI", got[:1] == [want], got[:1])
+    first = [first_line(m) for m in sent(c.uac, "INVITE")][:1]
+    got = [first_line(m) for m in received(c.uas, "INVITE", "1 INVITE")][:1]
+    want = [f"INVITE {ruri} SIP/2.0"]
+    chk(r, "the UAC sent the literal Request-URI", first == want, first)
+    chk(r, "the UAS receives exactly that Request-URI", got == want, got)
     chk(r, "an NG offer is seen for the Call-ID", "offer" in c.cmds(), c.cmds())
-    chk(r, "the hop log holds no 'naming the hop' line for the Call-ID", not naming_lines(c), len(naming_lines(c)))
+    log = hop_log(c)
+    chk(r, "the hop log of this run was collected", any("main: version: opensips" in l for l in log), len(log))
+    lines = naming_lines(c)
+    chk(r, "the hop log holds no 'naming the hop' line for the Call-ID", not lines, len(lines))
 
 
 def bed_ruri(c, r):
-    sent = [first_line(m) for rr_, m in c.uac if not rr_ and first_line(m).startswith("INVITE")]
-    chk(r, "the INVITE names the UAS in its Request-URI", sent[:1] == ["INVITE sip:late@192.168.1.19:5060 SIP/2.0"], sent[:1])
+    want = f"sip:late@{MEDIA_IP}:{UAS_SIP_PORT}"
     to_hop = [x for x in c.sip_frames() if x["method"] == "INVITE" and x["dport"] == HOP_PORT and x["dst"] == MEDIA_IP]
-    chk(r, "the INVITE is sent to the hop 192.168.1.19:5080 (capture)", to_hop, len(to_hop))
+    chk(r, f"the capture holds the INVITE sent to the hop {MEDIA_IP}:{HOP_PORT}", to_hop, len(to_hop))
+    chk(r, f"the INVITE the hop receives names the UAS {want} in its Request-URI (capture)",
+        to_hop and all(x["ruri"] == want for x in to_hop), sorted({x["ruri"] for x in to_hop}))
+
+
+def alias_variant(c, r):
+    tcp = f"{c.d}/late_offer_hop.local.cfg.tcp"
+    src = tcp if os.path.exists(tcp) else os.path.join(HERE, "..", "opensips", "late_offer_hop.local.cfg.sipp")
+    plain = {f"socket={p}:{MEDIA_IP}:{HOP_PORT}": f"socket={p}:{MEDIA_IP}:{HOP_PORT} as {ADVERTISED_IP}:{HOP_PORT}" for p in ("udp", "tcp")}
+    want = [plain.get(l, l) for l in open(src).read().splitlines()]
+    path = f"{c.d}/late_offer_hop.local.cfg.alias"
+    alias = open(path).read().splitlines() if os.path.exists(path) else []
+    changed = [l for l in alias if l in plain.values()]
+    chk(r, "the deployed alias variant equals its source except the two socket lines, which name the alias",
+        alias == want and len(changed) == 2, changed)
+
+
+def t39c_rejected(c, r, tcp=False):
+    alias_variant(c, r)
+    t39_rejected(c, r, ["INVITE"], tcp)
+
+
+def t39c_rel(c, r):
+    alias_variant(c, r)
+    relayed(c, r, f"sip:late@{ADVERTISED_IP};user=phone")
+    inv = received(c.uas, "INVITE", "1 INVITE")
+    rr = header(inv[0], "Record-Route") if inv else None
+    chk(r, f"the UAS-received Record-Route names the alias {ADVERTISED_IP}:{HOP_PORT}", rr and f"sip:{ADVERTISED_IP}:{HOP_PORT};" in rr, rr)
 
 
 CHECKS = {
@@ -572,9 +614,10 @@ CHECKS = {
     "t37": t37, "t38priv": t38udp, "t38pub": t38udp, "t38tcp": t38tcp,
     "t39a": lambda c, r: t39_rejected(c, r, ["INVITE", "OPTIONS"]),
     "t39b": lambda c, r: t39_rejected(c, r, ["INVITE", "OPTIONS"], tcp=True),
-    "t39c_udp": lambda c, r: t39_rejected(c, r, ["INVITE"]),
-    "t39c_tcp": lambda c, r: t39_rejected(c, r, ["INVITE"], tcp=True),
-    "t39c_rel": lambda c, r: relayed(c, r, "sip:late@203.0.113.10;user=phone"),
+    "t39c_udp": t39c_rejected,
+    "t39c_tcp": lambda c, r: t39c_rejected(c, r, tcp=True),
+    "t39c_rel": t39c_rel,
+    "t39a_relayed": lambda c, r: relayed(c, r, f"sip:late@{MEDIA_IP}:{HOP_PORT}"),
     "t39d1": lambda c, r: relayed(c, r, "sip:late@192.168.1.19;user=phone;cause=302"),
     "t39d2": lambda c, r: relayed(c, r, "sip:late@192.168.1.19;transport=tcp"),
     "t39d3": lambda c, r: relayed(c, r, "sip:late@192.168.1.19;transport=xyz"),

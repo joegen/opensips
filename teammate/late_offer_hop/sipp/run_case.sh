@@ -169,7 +169,7 @@ if [ -n "${LO_SS_SAMPLE:-}" ]; then
   ss_pid=$!
 fi
 set +e
-"$sipp" -sf "$uac_xml" "${LO_UAC_REMOTE:-$media_ip:$uas_port}" -rsa "${LO_UAC_RSA:-$media_ip:$hop_port}" -i "$uac_sip_ip" -p 5070 -mi "$media_ip" -mp 6050 \
+"$sipp" -sf "$uac_xml" "${LO_UAC_REMOTE:-$media_ip:$uas_port}" -rsa "$media_ip:$hop_port" -i "$uac_sip_ip" -p 5070 -mi "$media_ip" -mp 6050 \
   -t "$sipp_t" -s late -m "${LO_CALLS:-1}" ${LO_UAC_ARGS:-} -timeout "${LO_UAC_TIMEOUT:-60}" -trace_msg -message_file "$out/uac_messages.log" \
   -trace_err -error_file "$out/uac_errors.log" -trace_logs -log_file "$out/uac_logs.log" -nostdin > "$out/uac_stdout.log" 2>&1
 uac_rc=$?
