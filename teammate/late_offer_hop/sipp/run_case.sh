@@ -45,6 +45,9 @@ stop_hop() {
   sleep 0.5
 }
 
+if [ "$(docker inspect -f '{{.State.Running}}' rtpengine-lo 2>/dev/null)" != "true" ]; then
+  docker start rtpengine-lo > /dev/null
+fi
 python3 -I "$here/ng_ping.py" 127.0.0.1 22222 30 > /dev/null
 "$opensips" -c -f "$deploy/late_offer_hop.cfg" > "$out/opensips_check.log" 2>&1
 stop_hop
@@ -66,6 +69,9 @@ sipp -sf "$uas_xml" -i "$media_ip" -p "$uas_port" -mi "$media_ip" -mp 6000 \
 uas_pid=$!
 sleep 0.5
 
+if [ -n "${LO_STOP_RTPENGINE_AT:-}" ]; then
+  (sleep "$LO_STOP_RTPENGINE_AT"; docker stop -t 0 rtpengine-lo > /dev/null; date +%s.%N > "$out/rtpengine_stopped_at") &
+fi
 set +e
 sipp -sf "$uac_xml" "$media_ip:$hop_port" -i "$uac_sip_ip" -p 5070 -mi "$media_ip" -mp 6050 \
   -t "$sipp_t" -s late -m 1 -timeout 60 -trace_msg -message_file "$out/uac_messages.log" \
@@ -81,5 +87,9 @@ sudo -n kill "$tcpdump_pid" 2>/dev/null || true
 sudo -n journalctl --no-pager -q --since "$start_ts" -t opensips > "$out/opensips.log" 2>&1 || true
 wait "$tcpdump_pid" 2>/dev/null || true
 
+if [ "$(docker inspect -f '{{.State.Running}}' rtpengine-lo 2>/dev/null)" != "true" ]; then
+  docker start rtpengine-lo > /dev/null
+  python3 -I "$here/ng_ping.py" 127.0.0.1 22222 30 > /dev/null
+fi
 echo "uac_rc=$uac_rc uas_rc=$uas_rc out=$out"
 [ "$uac_rc" -eq 0 ] && [ "$uas_rc" -eq 0 ]
