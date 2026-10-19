@@ -34,13 +34,6 @@ case "$transport" in
 esac
 
 cp "$hop_dir/late_offer_hop.cfg" "$deploy/late_offer_hop.cfg"
-if [ -n "${LO_ACK_OP:-}" ]; then
-  sed -i "s/\$var(lo_ack_op) = \"answer\";/\$var(lo_ack_op) = \"$LO_ACK_OP\";/" "$deploy/late_offer_hop.cfg"
-  grep -q "lo_ack_op) = \"$LO_ACK_OP\"" "$deploy/late_offer_hop.cfg"
-fi
-if [ -n "${LO_EXTRA_FLAGS:-}" ]; then
-  sed -i "s/\"RTP\/AVP ICE=remove /\"RTP\/AVP ICE=remove $LO_EXTRA_FLAGS /g" "$deploy/late_offer_hop.cfg"
-fi
 cp "$local_src" "$deploy/late_offer_hop.local.cfg"
 
 stop_hop() {
