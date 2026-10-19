@@ -22,6 +22,7 @@ latest() {
 
 fork_head="$(git -C "$fork" rev-parse --verify HEAD)" || fork_head=""
 echo "fork ${fork_head:-<git rev-parse failed>}" | tee -a "$summary"
+echo "sipp $(${LO_SIPP:-/usr/local/bin/sipp_lo} -v 2>&1 | grep -m1 -o 'SIPp v[^ ]*')" | tee -a "$summary"
 [ -n "$fork_head" ] || record fork-commit FAIL "git -C $fork rev-parse --verify HEAD failed (C5.publishing step 4 needs the fork commit)"
 cd "$here" || exit 1
 
@@ -196,6 +197,13 @@ else
 fi
 case_run t01udp uac_late_offer.xml uas_answer.xml udp; row T-01 "udp"
 case_run t01tcp uac_late_offer.xml uas_answer.xml tcp; row T-01 "tcp"
+for c in t01udp t01tcp; do
+  if python3 -I "$here/row_checks.py" bed_ruri "$(latest "$c")" > "$LO_RESULTS_DIR/bed-ruri-$c.txt" 2>&1; then
+    record "bed-ruri-$c" PASS "the $c INVITE names the UAS 192.168.1.19:5060 and is sent to the hop 192.168.1.19:5080"
+  else
+    record "bed-ruri-$c" FAIL "bed Request-URI rule not in force for $c (see bed-ruri-$c.txt)"
+  fi
+done
 case_run t02a t02a_uac.xml uas_answer.xml; row T-02 "(a)"
 case_run t02b t02b_uac.xml uas_answer.xml; row T-02 "(b)"
 LO_CALLS=2 LO_UAC_ARGS="-l 1" case_run t03seq uac_late_offer.xml uas_answer.xml; row T-03 "in a row"
@@ -263,6 +271,34 @@ negative_control() {
   fi
 }
 negative_control t38-negative-control t38priv "$(latest t01udp)"
+
+hop_remote="192.168.1.19:5080"
+LO_UAC_REMOTE="$hop_remote" LO_UAS_ARGS="-timeout 6" case_run t39a t39_uac.xml t13b_uas.xml udp 97; row T-39 "(a) UDP INVITE and OPTIONS naming the hop"
+LO_UAC_REMOTE="$hop_remote" LO_UAS_ARGS="-timeout 6" case_run t39b t39_uac.xml t13b_uas.xml tcp 97; row T-39 "(b) TCP INVITE and OPTIONS naming the hop"
+LO_LOCAL_ALIAS=203.0.113.10 LO_UAC_REMOTE=203.0.113.10:5080 LO_UAS_ARGS="-timeout 6" case_run t39c_udp t39inv_uac.xml t13b_uas.xml udp 97; row T-39 "(c) UDP INVITE naming the alias"
+LO_LOCAL_ALIAS=203.0.113.10 LO_UAC_REMOTE=203.0.113.10:5080 LO_UAS_ARGS="-timeout 6" case_run t39c_tcp t39inv_uac.xml t13b_uas.xml tcp 97; row T-39 "(c) TCP INVITE naming the alias"
+LO_LOCAL_ALIAS=203.0.113.10 LO_UAC_ARGS="-key ruri sip:late@203.0.113.10;user=phone" case_run t39c_rel t39lit_uac.xml uas_answer.xml udp; row T-39 "(c) alias host without port relayed"
+LO_UAC_ARGS="-key ruri sip:late@192.168.1.19;user=phone;cause=302" case_run t39d1 t39lit_uac.xml uas_answer.xml udp; row T-39 "(d1) relayed"
+LO_UAC_ARGS="-key ruri sip:late@192.168.1.19;transport=tcp" case_run t39d2 t39lit_uac.xml uas_answer.xml udp; row T-39 "(d2) relayed"
+LO_UAC_ARGS="-key ruri sip:late@192.168.1.19;transport=xyz" case_run t39d3 t39lit_uac.xml uas_answer.xml udp; row T-39 "(d3) relayed"
+LO_UAC_REMOTE="$hop_remote" LO_UAC_SIP_IP="$karoo_private" LO_UAS_ARGS="-timeout 6" case_run t39e t39e_uac.xml t13b_uas.xml udp 97; row T-39 "(e) 482 before 404"
+negative_control t39-negative-control t39a "$(latest t01udp)"
+negative_control t39-relayed-negative-control t39d1 "$(latest t39a)"
+noguard="$LO_RESULTS_DIR/late_offer_hop.noguard.cfg"
+sed 's/if (\$rp != 0 \&\& is_myself(\$rd, \$rp)) {/if (is_myself($rd, $rp)) {/' "$top/opensips/late_offer_hop.cfg" > "$noguard"
+if [ "$(diff "$top/opensips/late_offer_hop.cfg" "$noguard" | grep -c '^[<>]')" = 2 ]; then
+  LO_HOP_IMAGE="" LO_HOP_CFG="$noguard" LO_UAC_ARGS="-key ruri sip:late@192.168.1.19;transport=xyz" LO_UAS_ARGS="-timeout 6" LO_UAC_TIMEOUT=10 \
+    ./run_case.sh t39d3-noguard t39lit_uac.xml t13b_uas.xml udp > /dev/null 2>&1
+  ng_dir="$(latest t39d3-noguard)"
+  if ! python3 -I "$here/row_checks.py" t39d3 "$ng_dir" > "$LO_RESULTS_DIR/t39-guard-control.txt" 2>&1 \
+    && python3 -I "$here/row_checks.py" t39d3_404 "$ng_dir" >> "$LO_RESULTS_DIR/t39-guard-control.txt" 2>&1; then
+    record t39-guard-control PASS "(d3) against the logic file without '\$rp != 0 && ' gets 404 and the relayed check FAILS ($ng_dir)"
+  else
+    record t39-guard-control FAIL "(d3) without the guard did not get 404, or the relayed check passed ($ng_dir)"
+  fi
+else
+  record t39-guard-control FAIL "the scratch logic file is not a one-line change of the guard"
+fi
 
 rtpe_restart() {
   "$top/rtpengine/build_and_run_rtpengine.sh" "$1" "$fork" > "$LO_RESULTS_DIR/container_build_$2.log" 2>&1 \

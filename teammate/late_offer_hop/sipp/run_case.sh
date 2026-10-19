@@ -37,6 +37,10 @@ case "$transport" in
          "$hop_dir/late_offer_hop.local.cfg.sipp" > "$local_src" ;;
   *) usage ;;
 esac
+if [ -n "${LO_LOCAL_ALIAS:-}" ]; then
+  sed -E "s#^(socket=(udp|tcp):$media_ip:$hop_port)\$#\\1 as $LO_LOCAL_ALIAS:$hop_port#" "$local_src" > "$out/late_offer_hop.local.cfg.alias"
+  local_src="$out/late_offer_hop.local.cfg.alias"
+fi
 
 if [ -z "$image" ]; then
   cp "${LO_HOP_CFG:-$hop_dir/late_offer_hop.cfg}" "$deploy/late_offer_hop.cfg"
@@ -165,7 +169,7 @@ if [ -n "${LO_SS_SAMPLE:-}" ]; then
   ss_pid=$!
 fi
 set +e
-"$sipp" -sf "$uac_xml" "$media_ip:$hop_port" -i "$uac_sip_ip" -p 5070 -mi "$media_ip" -mp 6050 \
+"$sipp" -sf "$uac_xml" "${LO_UAC_REMOTE:-$media_ip:$uas_port}" -rsa "${LO_UAC_RSA:-$media_ip:$hop_port}" -i "$uac_sip_ip" -p 5070 -mi "$media_ip" -mp 6050 \
   -t "$sipp_t" -s late -m "${LO_CALLS:-1}" ${LO_UAC_ARGS:-} -timeout "${LO_UAC_TIMEOUT:-60}" -trace_msg -message_file "$out/uac_messages.log" \
   -trace_err -error_file "$out/uac_errors.log" -trace_logs -log_file "$out/uac_logs.log" -nostdin > "$out/uac_stdout.log" 2>&1
 uac_rc=$?
