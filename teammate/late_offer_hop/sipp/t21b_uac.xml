@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="ISO-8859-1" ?>
 <!DOCTYPE scenario SYSTEM "sipp.dtd">
-<scenario name="T-21b UAC: answers with telephone-event at PT 96 and sends RFC 4733 events at PT 96">
+<scenario name="T-21b UAC: answers with telephone-event at PT 96 and sends RFC 4733 events at PT 101 (the offer PT, RFC 3264 6.1)">
   <send retrans="500">
     <![CDATA[
       INVITE sip:[service]@[remote_ip]:[remote_port] SIP/2.0
@@ -62,7 +62,7 @@
   <pause milliseconds="3500"/>
   <nop>
     <action>
-      <exec play_pcap_audio="dtmf5_pt96.pcap"/>
+      <exec play_pcap_audio="dtmf5_pt101.pcap"/>
     </action>
   </nop>
   <pause milliseconds="3000"/>
