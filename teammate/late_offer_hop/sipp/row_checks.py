@@ -164,13 +164,20 @@ def silent_window(c, moved, home):
     return False, f"RTPEngine to :{moved} at {first:.3f} not inside a silent window of :{home}"
 
 
+PEER_PORTS = {UAS_PORT: (UAS_PORT, 6048, 6097), UAC_PORT: (UAC_PORT, 6098)}
+
+
 def dest_after_resume(c, home):
     out = []
     for a, b in gaps(c, home):
-        after = [t for t, s, d in c.rtp() if 40000 <= port_of(s) <= 49999 and t > b and t < b + 0.2]
-        dst = [port_of(d) for t, s, d in c.rtp() if t in after and port_of(d) in (home, 6097, 6098, 6048)]
-        out.append((b, dst[:1]))
+        dst = [port_of(d) for t, s, d in c.rtp()
+               if 40000 <= port_of(s) <= 49999 and b < t < b + 0.2 and port_of(d) in PEER_PORTS[home]]
+        out.append((b, dst))
     return out
+
+
+def recovered(dst, home):
+    return home in dst and all(d == home for d in dst[1:])
 
 
 def chk(results, name, ok, detail=""):
@@ -337,7 +344,8 @@ def t18(c, r):
 
 def t20_recovery(c, r, home):
     res = dest_after_resume(c, home)
-    chk(r, f"after the offerer resumes, RTPEngine sends to :{home}", res and all(d == [home] for b, d in res), res)
+    chk(r, f"after the offerer resumes, RTPEngine sends to :{home} (only the first packet may still go to the old port)",
+        res and all(recovered(d, home) for b, d in res), res)
     inv = received(c.uas, "INVITE")
     chk(r, "Mediant-facing port unchanged", len({sdp_port(m) for m in inv if sdp_port(m)}) == 1)
 
