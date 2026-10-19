@@ -63,13 +63,46 @@ record T-33 "$t33" "AUTO pre/post-start checks"
 
 lab_tmp="$LO_RESULTS_DIR/lab_check"
 mkdir -p "$lab_tmp"
-sed -e 's/<proto>/udp/g; s/<HOP_IP>/192.168.1.19/; s/<HOP_PORT>/5080/; s/<KAROO_IP>/192.168.1.19/' \
-  "$top/opensips/late_offer_hop.local.cfg.lab" > /opt/late_offer_hop/opensips/late_offer_hop.local.cfg
-if /opt/opensips-4.0.2/sbin/opensips -c -f "$top/opensips/late_offer_hop.cfg" > "$lab_tmp/check.log" 2>&1; then
-  record cfg-lab PASS "'opensips -c' with the placeholder-filled .lab file"
-else
-  record cfg-lab FAIL "'opensips -c' with the placeholder-filled .lab file"
-fi
+
+fill_lab() {
+  sed -e "s/<KAROO_PRIVATE_IP>/$2/g; s/<KAROO_PUBLIC_IP>/$3/g; s/<HOP_PORT>/$4/g; s/<NG_PORT>/$5/g" \
+    "$top/opensips/late_offer_hop.local.cfg.lab" > "$1"
+}
+
+lab_cfg_check() {
+  local copy="$1" log="$2"
+  if [ -n "${LO_HOP_IMAGE:-}" ]; then
+    docker run --rm --network host -v "$copy:/opt/late_offer_hop/opensips/late_offer_hop.local.cfg:ro" \
+      "$LO_HOP_IMAGE" -c > "$log" 2>&1
+  else
+    cp "$copy" /opt/late_offer_hop/opensips/late_offer_hop.local.cfg
+    /opt/opensips-4.0.2/sbin/opensips -c -f "$top/opensips/late_offer_hop.cfg" > "$log" 2>&1
+  fi
+}
+
+lab_check() {
+  local name="$1" priv="$2" pub="$3" port="$4" ng="$5" copy note
+  copy="$lab_tmp/$name.local.cfg"
+  note="filled with $priv/$pub/$port/$ng"
+  fill_lab "$copy" "$priv" "$pub" "$port" "$ng"
+  if grep -qE '<(KAROO_PRIVATE_IP|KAROO_PUBLIC_IP|HOP_PORT|NG_PORT)>' "$copy"; then
+    record "$name" FAIL "placeholder left in the filled .lab copy ($note)"
+    return
+  fi
+  if ! lab_cfg_check "$copy" "$lab_tmp/$name.check.log"; then
+    copy="$lab_tmp/$name.bed.local.cfg"
+    note="$note; bed address 192.168.1.19 used in place of $priv (not owned by the bed host), alias kept"
+    fill_lab "$copy" 192.168.1.19 "$pub" "$port" "$ng"
+    if ! lab_cfg_check "$copy" "$lab_tmp/$name.bed.check.log"; then
+      record "$name" FAIL "'-c' with the filled .lab copy ($note)"
+      return
+    fi
+  fi
+  record "$name" PASS "'-c' with the filled .lab copy ($note)"
+}
+
+lab_check cfg-lab-pair1 10.2.0.15 4.155.11.192 6060 22222
+lab_check cfg-lab-pair2 10.2.0.16 4.155.41.131 6060 22223
 
 case_run() {
   local case_name="$1" uac="$2" uas="$3" transport="${4:-udp}" expect_uas="${5:-0}"
@@ -167,3 +200,6 @@ case_run t32 t32_uac.xml t32_uas.xml; row T-32 ""
 rows_total="$(awk '$1 ~ /^T-/ {print $1}' "$summary" | sort -u | wc -l)"
 rows_failed="$(awk '$1 ~ /^T-/ && $2 == "FAIL" {print $1}' "$summary" | sort -u | wc -l)"
 echo "entries: pass=$pass fail=$fail; rows: $((rows_total - rows_failed)) of $rows_total pass" | tee -a "$summary"
+other_failed="$(awk '$1 !~ /^T-/ && $2 == "FAIL" {print $1}' "$summary" | sort -u | tr '\n' ' ')"
+echo "non-row FAIL entries: '${other_failed}'" | tee -a "$summary"
+[ "$fail" = 0 ]

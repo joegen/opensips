@@ -1,6 +1,6 @@
 [rtpengine]
-interface=<MEDIA_IP>
-listen-ng=127.0.0.1:22222
+interface=<KAROO_PRIVATE_IP>!<KAROO_PUBLIC_IP>
+listen-ng=127.0.0.1:<NG_PORT>
 port-min=40000
 port-max=49999
 table=-1
