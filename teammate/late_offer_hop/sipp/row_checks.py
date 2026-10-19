@@ -421,6 +421,94 @@ def t17(c, r):
     chk(r, "ACK at the UAS has no body", ack and not body(ack[0]))
 
 
+ADVERTISED_IP = "203.0.113.10"
+HOP_PORT = 5080
+UAS_SIP_PORT = 5060
+
+
+def c_lines(msg):
+    return re.findall(r"^c=IN IP4 (\S+)$", body(msg), re.M)
+
+
+def origin_addr(msg):
+    m = re.search(r"^o=\S+ \d+ \d+ IN IP4 (\S+)$", body(msg), re.M)
+    return m.group(1) if m else None
+
+
+def t37(c, r):
+    inv = received(c.uas, "INVITE", "1 INVITE")
+    ok = [m for m in received(c.uac, "SIP/2.0 200") if header(m, "CSeq") == "1 INVITE"]
+    cs = [x for m in inv[:1] + ok[:1] for x in c_lines(m)]
+    chk(r, "INVITE at the UAS and 200 at the UAC each carry c=, every c= is the advertised address",
+        inv and ok and c_lines(inv[0]) and c_lines(ok[0]) and all(x == ADVERTISED_IP for x in cs), cs)
+    o = origin_addr(inv[0]) if inv else None
+    chk(r, "o= address in the INVITE at the UAS is the advertised address", o == ADVERTISED_IP, o)
+    ports = sorted({p for p in (sdp_port(inv[0]) if inv else None, sdp_port(ok[0]) if ok else None) if p})
+    path = f"{c.d}/ss_samples.txt"
+    ss = open(path).read() if os.path.exists(path) else ""
+    bound = {int(a.rsplit(":", 1)[1]): a.rsplit(":", 1)[0] for a in re.findall(r"\s(\d+\.\d+\.\d+\.\d+:\d+)\s", ss)}
+    chk(r, "the call's RTPEngine media ports were bound on the bed address during the call",
+        len(ports) == 2 and all(bound.get(p) == MEDIA_IP for p in ports), {p: bound.get(p) for p in ports})
+    chk(r, "nothing bound on the advertised address", ss and ADVERTISED_IP not in ss)
+
+
+def sip_frames(c):
+    import subprocess
+    ids = c.call_ids
+    if not ids:
+        return []
+    flt = " or ".join(f'sip.Call-ID == "{cid}"' for cid in ids)
+    fields = ["sll.pkttype", "ip.src", "udp.srcport", "tcp.srcport", "ip.dst", "udp.dstport", "tcp.dstport", "tcp.stream",
+              "sip.Method", "sip.Status-Code", "sip.CSeq.method", "sip.Call-ID"]
+    cmd = ["tshark", "-r", f"{c.d}/capture.pcap", "-o", "tcp.analyze_sequence_numbers:FALSE", "-Y", flt, "-T", "fields", "-E", "separator=|", "-E", "occurrence=f"]
+    for f in fields:
+        cmd += ["-e", f]
+    out = subprocess.run(cmd, check=True, capture_output=True, text=True).stdout
+    frames = []
+    for line in out.splitlines():
+        pkttype, *v = line.split("|")
+        if pkttype != "0":
+            continue
+        frames.append({"src": v[0], "sport": int(v[1] or v[2]), "dst": v[3], "dport": int(v[4] or v[5]),
+                       "stream": v[6], "method": v[7], "status": v[8], "cseq": v[9], "cid": v[10]})
+    return frames
+
+
+def t38(c, r, methods):
+    f = sip_frames(c)
+    to_hop = [x for x in f if x["dport"] == HOP_PORT and x["method"]]
+    from_hop = [x for x in f if x["sport"] == HOP_PORT and x["status"]]
+    for m in methods:
+        reqs = [x for x in to_hop if x["method"] == m]
+        r482 = [x for x in from_hop if x["cseq"] == m and x["status"] == "482"]
+        chk(r, f"capture holds the {m} to the hop and the hop's 482", reqs and r482, f"{len(reqs)} {m}, {len(r482)} 482")
+        chk(r, f"exactly one 482 per copy of the {m} the hop received", len(reqs) == len(r482), f"{len(reqs)} vs {len(r482)}")
+        chk(r, f"the hop sends no other response to the {m}", all(x["status"] == "482" for x in from_hop if x["cseq"] == m),
+            sorted({x["status"] for x in from_hop if x["cseq"] == m}))
+    if "INVITE" in methods:
+        chk(r, "the ACK of the 482 is in the capture toward the hop", any(x["method"] == "ACK" for x in to_hop))
+    chk(r, "no request with the row's Call-IDs reaches the UAS (ACK included)",
+        not any(x["dport"] == UAS_SIP_PORT and x["method"] for x in f), [x["method"] for x in f if x["dport"] == UAS_SIP_PORT])
+    chk(r, "UAS log holds no message", not c.uas)
+    chk(r, "no NG command", c.cmds() == [], c.cmds())
+
+
+def t38udp(c, r):
+    t38(c, r, ["INVITE", "OPTIONS"])
+
+
+def t38tcp(c, r):
+    t38(c, r, ["INVITE"])
+    f = sip_frames(c)
+    streams = {x["stream"] for x in f if x["method"] == "INVITE" and x["dport"] == HOP_PORT} | \
+              {x["stream"] for x in f if x["status"] == "482" and x["sport"] == HOP_PORT}
+    chk(r, "the 482 comes back on the INVITE's TCP connection", len(streams) == 1 and "" not in streams, streams)
+    sipp_lines = [l.strip() for l in open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "opensips", "late_offer_hop.local.cfg.sipp")) if "lo_karoo_" in l and "_ip)" in l]
+    tcp_path = f"{c.d}/late_offer_hop.local.cfg.tcp"
+    tcp_lines = [l.strip() for l in open(tcp_path) if "lo_karoo_" in l and "_ip)" in l] if os.path.exists(tcp_path) else []
+    chk(r, "the deployed TCP variant's lo_karoo_*_ip lines equal the .sipp lines", len(sipp_lines) == 2 and tcp_lines == sipp_lines, tcp_lines)
+
+
 CHECKS = {
     "t01udp": t01, "t01tcp": t01, "t02a": t01, "t02b": t01,
     "t03seq": t03, "t03same": t03, "t04a": t04, "t04b": t04, "t05": ng_zero, "t06": t06,
@@ -433,6 +521,7 @@ CHECKS = {
     "t20_488u": t20_488u, "t20_488s": t20_488s, "t20cancel": t20cancel, "t20g1": t20g1, "t20g2": t20g2,
     "t22a": t22, "t22b": t22b, "t23_401": t23, "t23_422": t23, "t27": t27_28, "t28": t27_28,
     "t21a": t21a, "t21b": t21b, "t29": t29, "t29b": t29b, "t30": t30, "t32": t32,
+    "t37": t37, "t38priv": t38udp, "t38pub": t38udp, "t38tcp": t38tcp,
 }
 
 

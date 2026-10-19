@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<!DOCTYPE scenario SYSTEM "sipp.dtd">
+<scenario name="T-38 UAC over TCP: initial INVITE from a Karoo address gets 482 on the same connection">
+  <send retrans="500">
+    <![CDATA[
+      INVITE sip:[service]@[remote_ip]:[remote_port] SIP/2.0
+      Via: SIP/2.0/[transport] [local_ip]:[local_port];branch=[branch]
+      From: "karoo" <sip:karoo@[local_ip]:[local_port]>;tag=[pid]t38inv
+      To: <sip:[service]@[remote_ip]:[remote_port]>
+      Call-ID: [call_id]
+      CSeq: 1 INVITE
+      Contact: <sip:karoo@[local_ip]:[local_port];transport=[transport]>
+      Max-Forwards: 70
+      Content-Length: 0
+
+    ]]>
+  </send>
+  <recv response="482"/>
+  <send>
+    <![CDATA[
+      ACK sip:[service]@[remote_ip]:[remote_port] SIP/2.0
+      [last_Via:]
+      [last_From:]
+      [last_To:]
+      Call-ID: [call_id]
+      CSeq: 1 ACK
+      Max-Forwards: 70
+      Content-Length: 0
+
+    ]]>
+  </send>
+</scenario>

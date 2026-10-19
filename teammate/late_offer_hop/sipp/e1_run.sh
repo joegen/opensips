@@ -46,6 +46,9 @@ echo "T-33 pre: $overlap_note" | tee -a "$summary"
 busy="$(ss -lunH | awk '{split($4,a,":"); p=a[length(a)]; if (p >= 40000 && p <= 49999) print $4}' | tr '\n' ' ')"
 echo "T-33 pre (recorded, not pass/fail, HD-LO-23): UDP sockets of other processes in the range: '${busy}'" | tee -a "$summary"
 "$top/rtpengine/build_and_run_rtpengine.sh" "$conf_src" "$fork" > "$LO_RESULTS_DIR/container_build.log" 2>&1 || t33=FAIL
+rtpe_id="$(docker inspect -f '{{.Image}}' rtpengine-lo)"
+echo "rtpengine-lo image $rtpe_id (fork $(git -C "$fork" rev-parse HEAD))" | tee -a "$summary"
+export LO_RTPENGINE_IMAGE_ID="$rtpe_id"
 python3 -I "$here/ng_ping.py" 127.0.0.1 22222 30 > /dev/null || t33=FAIL
 ng="$(sudo -n ss -lunpH | grep rtpengine | awk '{print $4}' | sort -u | tr '\n' ' ')"
 echo "T-33 post: rtpengine UDP sockets bound before calls: '$ng'" | tee -a "$summary"
@@ -56,6 +59,24 @@ echo "T-33 post: rtpengine TCP listeners: $tcp" | tee -a "$summary"
 netmode="$(docker inspect -f '{{.HostConfig.NetworkMode}}' rtpengine-lo)"
 echo "T-33 post: network mode '$netmode'" | tee -a "$summary"
 [ "$netmode" = host ] || t33=FAIL
+priv_check() {
+  local c="$1" opts uid rc_a rc_c
+  opts="$(docker inspect -f '{{range .HostConfig.SecurityOpt}}{{println .}}{{end}}' "$c" 2>&1)"
+  grep -Eqx 'no-new-privileges([:=]true)?' <<< "$opts"; rc_a=$?
+  uid="$(docker exec "$c" id -u 2>&1)"
+  docker exec "$c" sudo -n true > /dev/null 2>&1; rc_c=$?
+  echo "SecurityOpt='$(tr '\n' ' ' <<< "$opts")' (a)=$rc_a; id -u='$uid'; sudo -n true exit $rc_c"
+  PRIV_A=$rc_a PRIV_UID=$uid PRIV_C=$rc_c
+}
+priv_check rtpengine-lo > "$LO_RESULTS_DIR/t33_priv.txt"
+echo "T-33 post: privilege check on rtpengine-lo: $(cat "$LO_RESULTS_DIR/t33_priv.txt")" | tee -a "$summary"
+[ "$PRIV_A" = 0 ] && [ "$PRIV_UID" = 1000 ] && [ "$PRIV_C" != 0 ] || t33=FAIL
+docker rm -f rtpengine-lo-nnp-ctl > /dev/null 2>&1
+docker run -d --name rtpengine-lo-nnp-ctl --network none --entrypoint sleep "$rtpe_id" 120 > /dev/null
+priv_check rtpengine-lo-nnp-ctl > "$LO_RESULTS_DIR/t33_priv_control.txt"
+docker rm -f rtpengine-lo-nnp-ctl > /dev/null 2>&1
+echo "T-33 control: same check on rtpengine-lo-nnp-ctl (no option): $(cat "$LO_RESULTS_DIR/t33_priv_control.txt")" | tee -a "$summary"
+[ "$PRIV_A" != 0 ] && [ "$PRIV_UID" = 1000 ] && [ "$PRIV_C" = 0 ] || t33=FAIL
 grep -qx 'table=-1' /opt/late_offer_hop/rtpengine/rtpengine.conf && grep -qx 'port-min=40000' /opt/late_offer_hop/rtpengine/rtpengine.conf \
   && grep -qx 'port-max=49999' /opt/late_offer_hop/rtpengine/rtpengine.conf || t33=FAIL
 record T-33 "$t33" "AUTO pre/post-start checks"
@@ -103,6 +124,20 @@ lab_check() {
 
 lab_check cfg-lab-pair1 10.2.0.15 4.155.11.192 6060 22222
 lab_check cfg-lab-pair2 10.2.0.16 4.155.41.131 6060 22223
+
+if [ -n "${LO_HOP_IMAGE:-}" ]; then
+  : "${LO_HOP_BUILD_COMMIT:?image mode needs LO_HOP_BUILD_COMMIT, the commit the hop image was built from}"
+  t35=PASS
+  "$here/t35_hop_image.sh" "$LO_HOP_IMAGE" "$LO_HOP_BUILD_COMMIT" "$LO_RESULTS_DIR/t35" > /dev/null || t35=FAIL
+  "$here/t35_rtpengine_image.sh" "$fork" "$rtpe_id" "$LO_RESULTS_DIR/t35" > /dev/null || t35=FAIL
+  record T-35 "$t35" "AUTO hop image $(docker image inspect -f '{{.Id}}' "$LO_HOP_IMAGE") build $LO_HOP_BUILD_COMMIT; rtpengine image $rtpe_id; items in $LO_RESULTS_DIR/t35; .lab part = cfg-lab-pair1/2"
+  out="$(LO_LOCAL_UNREADABLE=1 ./run_case.sh image-start-unreadable uac_late_offer.xml uas_answer.xml 2>&1 | tail -1)"
+  if grep -q 'uac_rc=99' <<< "$out" && grep -q 'did not start' "$(latest image-start-unreadable)/runner_error.log"; then
+    record image-start-unreadable PASS "a case started with an unreadable local file FAILS at the start check ($out)"
+  else
+    record image-start-unreadable FAIL "a case started with an unreadable local file did not FAIL at the start check ($out)"
+  fi
+fi
 
 case_run() {
   local case_name="$1" uac="$2" uas="$3" transport="${4:-udp}" expect_uas="${5:-0}"
@@ -196,6 +231,47 @@ LO_BLOCK_HOP_TO_UAS=1 LO_UAS_ARGS="-timeout 25" case_run t29b t29_uac.xml t29_ua
 case_run t30 t30_uac.xml t30_uas.xml; row T-30 ""
 case_run t31 t31_uac.xml t31_uas.xml; row T-31 ""
 case_run t32 t32_uac.xml t32_uas.xml; row T-32 ""
+
+uac_ip="$(sed -n 's/^uac_sip_ip="${LO_UAC_SIP_IP:-\(.*\)}"$/\1/p' run_case.sh)"
+karoo_private="$(sed -n 's/.*lo_karoo_private_ip) = "\(.*\)";/\1/p' "$top/opensips/late_offer_hop.local.cfg.sipp")"
+karoo_public="$(sed -n 's/.*lo_karoo_public_ip) = "\(.*\)";/\1/p' "$top/opensips/late_offer_hop.local.cfg.sipp")"
+if [ -n "$uac_ip" ] && [ -n "$karoo_private" ] && [ -n "$karoo_public" ] && [ "$uac_ip" != "$karoo_private" ] && [ "$uac_ip" != "$karoo_public" ]; then
+  record t38-precondition PASS "UAC -i $uac_ip differs from lo_karoo_private_ip $karoo_private and lo_karoo_public_ip $karoo_public"
+else
+  record t38-precondition FAIL "UAC -i '$uac_ip', lo_karoo_private_ip '$karoo_private', lo_karoo_public_ip '$karoo_public'"
+fi
+LO_UAC_SIP_IP="$karoo_private" LO_UAS_ARGS="-timeout 6" case_run t38priv t38_uac.xml t13b_uas.xml udp 97; row T-38 "UDP from lo_karoo_private_ip"
+LO_UAC_SIP_IP="$karoo_public" LO_UAS_ARGS="-timeout 6" case_run t38pub t38_uac.xml t13b_uas.xml udp 97; row T-38 "UDP from lo_karoo_public_ip"
+LO_UAC_SIP_IP="$karoo_private" LO_UAS_ARGS="-timeout 6" case_run t38tcp t38tcp_uac.xml t13b_uas.xml tcp 97; row T-38 "TCP from lo_karoo_private_ip"
+
+negative_control() {
+  local name="$1" check="$2" dir="$3"
+  if python3 -I "$here/row_checks.py" "$check" "$dir" > "$LO_RESULTS_DIR/$name.txt" 2>&1; then
+    record "$name" FAIL "the $check check PASSED on $dir"
+  else
+    record "$name" PASS "the $check check FAILS on $dir, as required"
+  fi
+}
+negative_control t38-negative-control t38priv "$(latest t01udp)"
+
+rtpe_restart() {
+  "$top/rtpengine/build_and_run_rtpengine.sh" "$1" "$fork" > "$LO_RESULTS_DIR/container_build_$2.log" 2>&1 \
+    && python3 -I "$here/ng_ping.py" 127.0.0.1 22222 30 > /dev/null \
+    && [ "$(docker inspect -f '{{.Image}}' rtpengine-lo)" = "$rtpe_id" ]
+}
+t37_conf="$LO_RESULTS_DIR/rtpengine.conf.t37"
+sed 's/^interface=192\.168\.1\.19$/interface=192.168.1.19!203.0.113.10/' "$conf_src" > "$t37_conf"
+if [ "$(diff "$conf_src" "$t37_conf" | grep -c '^[<>]')" = 2 ] && grep -qx 'interface=192.168.1.19!203.0.113.10' "$t37_conf" && rtpe_restart "$t37_conf" t37; then
+  LO_SS_SAMPLE=1 case_run t37 uac_late_offer.xml uas_answer.xml; row T-37 ""
+else
+  record T-37 FAIL "the T-37 conf is not a one-line interface change, or RTPEngine did not restart on it with image $rtpe_id"
+fi
+negative_control t37-negative-control t37 "$(latest t01udp)"
+if rtpe_restart "$conf_src" restore; then
+  record rtpengine-restore PASS "RTPEngine restarted on rtpengine.conf.sipp with image $rtpe_id"
+else
+  record rtpengine-restore FAIL "RTPEngine did not restart on rtpengine.conf.sipp with image $rtpe_id"
+fi
 
 rows_total="$(awk '$1 ~ /^T-/ {print $1}' "$summary" | sort -u | wc -l)"
 rows_failed="$(awk '$1 ~ /^T-/ && $2 == "FAIL" {print $1}' "$summary" | sort -u | wc -l)"

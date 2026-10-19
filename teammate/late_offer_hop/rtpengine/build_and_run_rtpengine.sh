@@ -16,9 +16,10 @@ if docker container inspect rtpengine-lo >/dev/null 2>&1; then
   docker rm -f rtpengine-lo >/dev/null
 fi
 
-docker build -t rtpengine-lo:mr27.0.0.0 "$fork"
+docker build --provenance=false -t rtpengine-lo:mr27.0.0.0 "$fork"
 
 docker run -d --name rtpengine-lo --network host \
+  --security-opt no-new-privileges \
   --entrypoint /usr/local/bin/rtpengine \
   -v /opt/late_offer_hop/rtpengine/rtpengine.conf:/etc/rtpengine-lo/rtpengine.conf:ro \
   rtpengine-lo:mr27.0.0.0 \
